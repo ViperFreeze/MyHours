@@ -17,6 +17,7 @@ const CarnetCore = (() => {
       goal: Number(d.goal) > 0 ? Number(d.goal) : 30,
       name: typeof d.name === "string" && d.name.trim() ? d.name : DEFAULT_NAME,
       deadline: typeof d.deadline === "string" ? d.deadline : "",
+      defaultHours: Number(d.defaultHours) > 0 && Number(d.defaultHours) <= 24 ? Number(d.defaultHours) : 2,
       settingsUpdated: typeof d.settingsUpdated === "string" ? d.settingsUpdated : "",
       entries: Array.isArray(d.entries) ? d.entries.filter(okEntry).map(e => ({ ...e, hours: Number(e.hours) })) : [],
       planned: Array.isArray(d.planned) ? d.planned.filter(okPlan).map(p => ({ ...p, hours: Number(p.hours) })) : [],
@@ -44,7 +45,7 @@ const CarnetCore = (() => {
     };
     const s = (b.settingsUpdated || "") > (a.settingsUpdated || "") ? b : a;
     const merged = {
-      goal: s.goal, name: s.name, deadline: s.deadline, settingsUpdated: s.settingsUpdated,
+      goal: s.goal, name: s.name, deadline: s.deadline, defaultHours: s.defaultHours, settingsUpdated: s.settingsUpdated,
       entries: union(a.entries, b.entries),
       planned: union(a.planned, b.planned),
       deleted, lastSync: a.lastSync, changes: a.changes
@@ -120,7 +121,8 @@ if (typeof document !== "undefined") (function () {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   /* ---------- calculs ---------- */
-  const endOf = p => new Date(parseLocal(p.start).getTime() + p.hours * 36e5);
+  const endOf = p => { const s = parseLocal(p.start); if (p.allDay) { s.setDate(s.getDate() + 1); return s; } return new Date(s.getTime() + p.hours * 36e5); };
+  const timeLabel = p => { if (p.allDay) return "Heure libre"; const d = parseLocal(p.start); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   function weekStart(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; }
   function calc() {
     const now = new Date();
@@ -168,7 +170,7 @@ if (typeof document !== "undefined") (function () {
     if (c.needed != null && c.left > 0) pace.push(`<span>· il faut <b>${dur(c.needed)}</b> par semaine pour l'échéance</span>`);
     if (c.left > 0 && c.done + c.plannedH >= state.goal) pace.push(`<span>· vos séances planifiées suffisent à finir</span>`);
     $("#pace").innerHTML = pace.join(" ");
-    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); updatePreview(); updateLogBtn();
+    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderQuick(); updatePreview(); updateLogBtn();
   }
   function renderCells(c) {
     const goal = state.goal;
@@ -190,7 +192,7 @@ if (typeof document !== "undefined") (function () {
 
   function gcalUrl(p) {
     const s = parseLocal(p.start), e = endOf(p);
-    const f = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    const f = p.allDay ? d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` : d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
     const q = new URLSearchParams({ action: "TEMPLATE", text: p.title, dates: `${f(s)}/${f(e)}`, details: `Séance de bénévolat · ${state.name} · objectif ${num(state.goal)} h.` });
     try { q.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (err) {}
     if (p.location) q.set("location", p.location);
@@ -203,7 +205,7 @@ if (typeof document !== "undefined") (function () {
     $("#todo-list").innerHTML = past.map(p => {
       const d = parseLocal(p.start);
       return `<div class="item" data-id="${esc(p.id)}">${dateBlock(d)}
-        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${pad(d.getHours())}:${pad(d.getMinutes())}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}</div></div>
+        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}</div></div>
         <div class="dur">${dur(p.hours)}</div>
         <div class="acts"><label class="label" for="v-${esc(p.id)}">Heures faites</label><input class="mini num" id="v-${esc(p.id)}" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" value="${p.hours}">
         <button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button></div></div>`;
@@ -214,7 +216,7 @@ if (typeof document !== "undefined") (function () {
     $("#up-list").innerHTML = up.length ? up.map(p => {
       const d = parseLocal(p.start);
       return `<div class="item" data-id="${esc(p.id)}">${dateBlock(d)}
-        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${pad(d.getHours())}:${pad(d.getMinutes())}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}${p.calAdded ? '<span class="chip info">Ajoutée à l\'agenda</span>' : ""}</div></div>
+        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}${p.calAdded ? '<span class="chip info">Ajoutée à l\'agenda</span>' : ""}</div></div>
         <div class="dur">${dur(p.hours)}</div>
         <div class="acts"><a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Google Agenda</a>
         <button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Annuler la séance</button></div></div>`;
@@ -315,14 +317,25 @@ if (typeof document !== "undefined") (function () {
   });
 
   let tt;
-  function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 2800); }
+  function toast(m, undo) {
+    const t = $("#toast");
+    t.innerHTML = "";
+    const span = document.createElement("span"); span.textContent = m; t.appendChild(span);
+    if (undo) {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = "Annuler";
+      b.addEventListener("click", () => { clearTimeout(tt); t.classList.remove("on"); undo(); }, { once: true });
+      t.appendChild(b);
+    }
+    t.classList.add("on"); clearTimeout(tt);
+    tt = setTimeout(() => t.classList.remove("on"), undo ? 6000 : 2800);
+  }
 
   /* ---------- tiroirs : objectif et synchronisation ---------- */
   function openDrawer(which) {
     const set = which === "settings", syn = which === "sync";
     $("#settings").hidden = !set; $("#btn-settings").setAttribute("aria-expanded", String(set));
     $("#syncbox").hidden = !syn; $("#btn-sync").setAttribute("aria-expanded", String(syn));
-    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-deadline").value = state.deadline || ""; $("#s-goal").focus(); }
+    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-deadline").value = state.deadline || ""; setDefaultSelect(); $("#s-goal").focus(); }
     if (syn) { $("#x-msg").hidden = true; renderSyncState(); }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
@@ -333,6 +346,7 @@ if (typeof document !== "undefined") (function () {
     const g = parseFloat(String($("#s-goal").value).replace(",", "."));
     if (!(g > 0)) { toast("Indiquez un nombre d'heures supérieur à 0."); return; }
     state.goal = g; state.name = $("#s-name").value.trim() || DEFAULT_NAME; state.deadline = $("#s-deadline").value || "";
+    state.defaultHours = parseFloat($("#s-default").value) || 2;
     state.settingsUpdated = nowIso();
     openDrawer(null); commit(); toast("Objectif enregistré");
   });
@@ -379,19 +393,83 @@ if (typeof document !== "undefined") (function () {
     xmsg(txt, true);
   });
 
-  /* ---------- saisie ---------- */
+  /* ---------- saisie en 1 clic (aujourd'hui) ---------- */
+  function setDefaultSelect() {
+    const sel = $("#s-default"), v = String(state.defaultHours);
+    if (![...sel.options].some(o => o.value === v)) { const o = document.createElement("option"); o.value = v; o.textContent = dur(state.defaultHours); sel.appendChild(o); }
+    sel.value = v;
+  }
+  function quickValues() {
+    const def = state.defaultHours, out = [def];
+    for (const v of [1, 1.5, 2, 3]) { if (out.length >= 3) break; if (!out.includes(v)) out.push(v); }
+    return out.sort((a, b) => a - b);
+  }
+  let quickKey = "";
+  function renderQuick() {
+    const today = ymd(new Date());
+    const tot = sum(state.entries.filter(e => e.date === today), e => e.hours);
+    const tt2 = $("#today-tot");
+    tt2.textContent = tot ? `${dur(tot)} saisie${tot > 1 ? "s" : ""} aujourd'hui` : "Rien de saisi";
+    tt2.classList.toggle("has", tot > 0);
+    $("#q-date").textContent = `${dfFull.format(new Date()).replace(/^./, c => c.toUpperCase())} · un appui ajoute les heures faites aujourd'hui.`;
+    const vals = quickValues(), key = vals.join("|") + "/" + state.defaultHours;
+    if (key === quickKey) return;
+    quickKey = key;
+    $("#qbtns").innerHTML = vals.map(v => {
+      const main = v === state.defaultHours;
+      return `<button type="button" class="qbtn${main ? " main" : ""}" data-q="${v}" aria-label="Ajouter ${dur(v)} aujourd'hui${main ? " (durée par défaut)" : ""}">+${dur(v).replace(/ /g, "\u00a0")}${main ? "<small>par défaut</small>" : ""}</button>`;
+    }).join("");
+  }
+  $("#qbtns").addEventListener("click", ev => {
+    const b = ev.target.closest(".qbtn"); if (!b) return;
+    const hrs = parseFloat(b.dataset.q), t = nowIso(), id = uid();
+    state.entries.push({ id, date: ymd(new Date()), hours: hrs, note: "", source: "rapide", created: t, updated: t });
+    commit();
+    const fresh = $(`#qbtns .qbtn[data-q="${hrs}"]`);
+    if (fresh) { fresh.classList.add("flash"); setTimeout(() => fresh.classList.remove("flash"), 700); }
+    if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
+    toast(`+${dur(hrs)} aujourd'hui`, () => {
+      state.entries = state.entries.filter(e => e.id !== id); tomb(id);
+      commit(); toast("Saisie annulée");
+    });
+  });
+  $("#q-edit").addEventListener("click", () => { openDrawer("settings"); $("#s-default").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+
+  /* ---------- saisie avec date : réalisée si passée, prévision si à venir ---------- */
   $("#e-date").value = ymd(new Date());
-  function updateLogBtn() { const v = parseFloat($("#e-hours").value); $("#e-submit").textContent = v > 0 ? `Ajouter ${dur(v)}` : "Ajouter"; }
-  $("#e-hours").addEventListener("input", updateLogBtn);
+  const isFuture = date => date > ymd(new Date());
+  function updateLogBtn() {
+    const v = parseFloat($("#e-hours").value), date = $("#e-date").value, fut = !!date && isFuture(date);
+    $("#e-time-f").hidden = !fut;
+    $("#e-kind").innerHTML = !date ? "" : fut
+      ? `<span class="chip warn">Prévision</span><span>Comptée en heures planifiées, à valider le ${esc(dfDM.format(parseYmd(date)))}.</span>`
+      : `<span class="chip ok">Réalisée</span><span>${date === ymd(new Date()) ? "Ajoutée aux heures faites aujourd'hui." : `Ajoutée aux heures faites le ${esc(dfDM.format(parseYmd(date)))}.`}</span>`;
+    const d = v > 0 ? dur(v) : "";
+    $("#e-submit").textContent = fut ? (d ? `Prévoir ${d}` : "Prévoir") : (d ? `Ajouter ${d}` : "Ajouter");
+  }
+  ["#e-hours", "#e-date"].forEach(s => { $(s).addEventListener("input", updateLogBtn); $(s).addEventListener("change", updateLogBtn); });
   $("#f-log").addEventListener("submit", ev => {
     ev.preventDefault();
     const hrs = parseFloat($("#e-hours").value), date = $("#e-date").value;
     if (!(hrs > 0) || !date) { toast("Indiquez une date et une durée."); return; }
-    const t = nowIso();
-    state.entries.push({ id: uid(), date, hours: Math.round(hrs * 100) / 100, note: $("#e-note").value.trim(), source: "manuel", created: t, updated: t });
-    $("#e-note").value = "";
+    const t = nowIso(), id = uid(), h = Math.round(hrs * 100) / 100, note = $("#e-note").value.trim();
+    let msg;
+    if (isFuture(date)) {
+      const time = $("#e-time").value;
+      state.planned.push({ id, title: note || "Bénévolat", start: `${date}T${time || "00:00"}:00`, allDay: !time, hours: h, location: "", created: t, updated: t });
+      msg = `${dur(h)} prévues le ${dfDM.format(parseYmd(date))}`;
+    } else {
+      state.entries.push({ id, date, hours: h, note, source: "manuel", created: t, updated: t });
+      msg = `${dur(h)} ajoutées le ${dfDM.format(parseYmd(date))}`;
+    }
+    $("#e-note").value = ""; $("#e-time").value = "";
+    $("#e-date").value = ymd(new Date());
     commit();
-    toast(`${dur(hrs)} ajoutées le ${dfDM.format(parseYmd(date))}`);
+    toast(msg, () => {
+      state.entries = state.entries.filter(e => e.id !== id);
+      state.planned = state.planned.filter(p => p.id !== id); tomb(id);
+      commit(); toast("Saisie annulée");
+    });
   });
 
   /* ---------- planification ---------- */
@@ -501,7 +579,7 @@ if (typeof document !== "undefined") (function () {
   }
 
   // Les séances passées deviennent « à valider » : rafraîchir quand l'appli revient au premier plan.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { state = load(); render(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { state = load(); if (!$("#e-note").value && $("#e-date").value < ymd(new Date())) $("#e-date").value = ymd(new Date()); render(); } });
   window.addEventListener("storage", e => { if (e.key === LS) { state = load(); render(); } });
 
   save(); render();

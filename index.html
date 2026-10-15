@@ -167,9 +167,27 @@ svg .val{fill:var(--ink);font-weight:500}
 .wd .tr span{display:block;height:100%;background:var(--accent);border-radius:5px}
 .wd .v{font-family:var(--f-mono);font-size:12px;color:var(--muted);text-align:right}
 
+/* Quick add */
+.quick-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.today-tot{font-size:13px;font-weight:600;color:var(--muted)}
+.today-tot.has{color:var(--ok)}
+.qbtns{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:10px}
+.qbtn{border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:12px;padding:12px 6px;min-height:76px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-family:var(--f-display);font-weight:700;font-stretch:75%;font-size:23px;line-height:1.05;white-space:nowrap;font-variant-numeric:tabular-nums;touch-action:manipulation}
+.qbtn small{font-family:var(--f-body);font-stretch:100%;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.qbtn.main{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.qbtn.main small{color:var(--accent-ink);opacity:.85}
+.qbtn:active{transform:scale(.97)}
+.qbtn.flash{box-shadow:0 0 0 3px var(--ok-soft);border-color:var(--ok)}
+@media (prefers-reduced-motion:reduce){.qbtn:active{transform:none}}
+.linkbtn{align-self:flex-start;background:none;border:0;padding:0;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;margin-top:-4px}
+.kind{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
+
 .status{font-size:12px;color:var(--muted);text-align:center}
-.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100% - 32px);z-index:20;opacity:0;pointer-events:none;transition:opacity .2s}
-.toast.on{opacity:1}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100% - 32px);width:max-content;z-index:20;opacity:0;pointer-events:none;transition:opacity .2s;display:flex;gap:14px;align-items:center}
+.toast.on{opacity:1;pointer-events:auto}
+.toast button{background:none;border:0;padding:4px 0;color:var(--bg);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:nowrap}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
 </style>
 </head>
@@ -196,6 +214,9 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="field full"><label for="s-name">Nom de l'engagement</label><input id="s-name" maxlength="80" placeholder="Ex. Restos du Cœur"></div>
       <div class="field"><label for="s-goal">Heures promises</label><input id="s-goal" type="number" min="1" max="2000" step="0.5" inputmode="decimal"></div>
       <div class="field"><label for="s-deadline">Échéance (facultatif)</label><input id="s-deadline" type="date"></div>
+      <div class="field full"><label for="s-default">Durée par défaut du bouton « 1 clic »</label>
+        <select id="s-default"><option value="0.5">30 min</option><option value="1">1 h</option><option value="1.5">1 h 30</option><option value="2">2 h</option><option value="2.5">2 h 30</option><option value="3">3 h</option><option value="3.5">3 h 30</option><option value="4">4 h</option><option value="5">5 h</option><option value="6">6 h</option><option value="7">7 h</option><option value="8">8 h</option></select>
+      </div>
       <div class="row"><button type="button" class="ghost" id="s-cancel">Annuler</button><button class="primary" type="submit">Enregistrer</button></div>
     </form>
 
@@ -235,14 +256,23 @@ svg .val{fill:var(--ink);font-weight:500}
   </nav>
 
   <section class="panel" id="p-log" role="tabpanel" aria-labelledby="t-log">
+    <section class="box" id="quick" aria-labelledby="q-title">
+      <div class="quick-head"><h2 id="q-title">Aujourd'hui</h2><span class="today-tot num" id="today-tot">Rien de saisi</span></div>
+      <p class="hint" id="q-date">Un appui ajoute les heures faites aujourd'hui.</p>
+      <div class="qbtns" id="qbtns"></div>
+      <button type="button" class="linkbtn" id="q-edit">Changer la durée par défaut</button>
+    </section>
     <form class="box" id="f-log">
-      <h2>Saisir des heures réalisées</h2>
+      <h2>Autre durée ou autre date</h2>
+      <p class="hint">Date passée ou aujourd'hui : les heures comptent comme réalisées. Date à venir : elles sont enregistrées en prévision.</p>
       <div class="two">
         <div class="field"><label for="e-date">Date</label><input id="e-date" type="date" required></div>
         <div class="field"><label for="e-hours">Durée (heures)</label><input id="e-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
       </div>
       <div class="chips" data-for="e-hours"></div>
+      <div class="field" id="e-time-f" hidden><label for="e-time">Heure de début (facultatif)</label><input id="e-time" type="time"></div>
       <div class="field"><label for="e-note">Mission (facultatif)</label><input id="e-note" maxlength="120" placeholder="Ex. Distribution alimentaire"></div>
+      <div class="kind" id="e-kind"></div>
       <button class="primary" type="submit" id="e-submit">Ajouter 2 h</button>
     </form>
     <div class="box" id="todo-box" hidden>
