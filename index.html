@@ -53,6 +53,11 @@ a{color:var(--accent)}
 .num{font-variant-numeric:tabular-nums}
 .label{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 
+/* Brand: the provided stopwatch mark, tinted through the theme tokens */
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.brand .mark{width:30px;height:23px;flex:none;background:var(--ink);-webkit-mask:url(icons/logo-mark.png) center/contain no-repeat;mask:url(icons/logo-mark.png) center/contain no-repeat}
+.brand .word{font-family:var(--f-display);font-weight:700;font-stretch:115%;font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+
 /* Banners */
 .banner{display:flex;gap:12px;align-items:center;justify-content:space-between;background:var(--accent-soft);color:var(--ink);border-radius:12px;padding:10px 14px;font-size:14px}
 .banner.off{background:var(--warn-soft);color:var(--warn)}
@@ -177,7 +182,7 @@ svg .val{fill:var(--ink);font-weight:500}
   <section class="card" aria-labelledby="h-name">
     <div class="card-head">
       <div>
-        <div class="label">MyHours</div>
+        <div class="brand"><span class="mark" aria-hidden="true"></span><span class="word">MyHours</span></div>
         <h1 id="h-name">Mon engagement</h1>
         <div class="sub" id="h-sub">Objectif 30 h</div>
       </div>

@@ -12,7 +12,8 @@ const APP_FILES = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icons/apple-touch-icon.png",
+  "./icons/logo-mark.png"
 ];
 const abs = p => new URL(p, self.registration.scope).href;
 
