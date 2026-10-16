@@ -70,7 +70,6 @@ a{color:var(--accent)}
 .head-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap;position:relative}
 .ghost:hover{border-color:var(--muted)}
-.ghost .dot{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--plan);border:2px solid var(--surface)}
 .big{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .big .done{font-family:var(--f-display);font-stretch:70%;font-weight:800;font-size:64px;line-height:.9;letter-spacing:-.01em}
 .big .of{font-family:var(--f-display);font-stretch:75%;font-weight:600;font-size:26px;color:var(--muted)}
@@ -89,17 +88,12 @@ a{color:var(--accent)}
 .fig{background:var(--surface);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .fig b{font-family:var(--f-display);font-stretch:80%;font-size:24px;font-weight:700;line-height:1.1}
 .fig.d b{color:var(--accent)} .fig.p b{color:var(--plan)}
-.pace{font-size:13px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pace b{color:var(--ink)}
 
 .drawer{border-top:1px dashed var(--line);padding-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .drawer .full{grid-column:1/-1}
 .drawer .row{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .drawer h2{font-size:17px;font-stretch:90%;font-weight:700}
-.steps{margin:0;padding-left:20px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
-.steps b{color:var(--ink)}
-.syncstate{font-size:13px;color:var(--muted)}
-.syncstate b{color:var(--ink)}
 
 /* Remise à zéro */
 .reset{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:14px;margin-top:4px;display:flex;flex-direction:column;gap:10px}
@@ -134,8 +128,6 @@ a{color:var(--accent)}
 .secondary{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:46px}
 .preview{font-size:13px;color:var(--muted);background:var(--plan-soft);border-radius:8px;padding:9px 12px}
 .preview b{color:var(--ink)}
-.msg{font-size:13px;border-radius:8px;padding:9px 12px;background:var(--warn-soft);color:var(--warn)}
-.msg.okm{background:var(--ok-soft);color:var(--ok)}
 
 /* Lists */
 .list{display:flex;flex-direction:column}
@@ -185,8 +177,9 @@ svg .val{fill:var(--ink);font-weight:500}
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   font-family:var(--f-display);font-weight:700;font-stretch:75%;font-size:23px;line-height:1.05;white-space:nowrap;font-variant-numeric:tabular-nums;touch-action:manipulation}
 .qbtn small{font-family:var(--f-body);font-stretch:100%;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.02em}
-.qbtn.main{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.qbtn.main small{color:var(--accent-ink);opacity:.85}
+/* Premier appui : le bouton demande confirmation, le second ajoute. */
+.qbtn[data-armed="1"]{box-shadow:0 0 0 3px var(--accent-soft);border-color:var(--accent)}
+.qbtn[data-armed="1"] small{color:inherit;opacity:1}
 .qbtn:active{transform:scale(.97)}
 .qbtn.flash{box-shadow:0 0 0 3px var(--ok-soft);border-color:var(--ok)}
 @media (prefers-reduced-motion:reduce){.qbtn:active{transform:none}}
@@ -252,27 +245,36 @@ svg .val{fill:var(--ink);font-weight:500}
   <div class="banner" id="update" hidden><span>Une nouvelle version de MyHours est prête. Vos données sont conservées.</span><button class="ghost" id="update-btn">Mettre à jour</button></div>
   <div class="banner" id="install" hidden><span id="install-text">Installez l'appli pour l'ouvrir depuis l'écran d'accueil, même sans réseau.</span><button class="ghost" id="install-btn">Installer</button></div>
 
-  <section class="card" aria-labelledby="h-name">
+  <section class="card" aria-label="Objectif du mois">
     <div class="card-head">
       <div>
         <div class="brand"><span class="mark" aria-hidden="true"></span><span class="word">MyHours</span></div>
-        <h1 id="h-name">Mon engagement</h1>
-        <div class="sub" id="h-sub">Objectif 30 h</div>
+        <div class="sub" id="h-sub">Objectif 30 h par mois</div>
       </div>
       <div class="head-btns">
-        <button class="ghost" id="btn-sync" aria-expanded="false">Synchroniser<span class="dot" id="sync-dot" hidden></span></button>
+        <button class="ghost" id="gcal-sync">Envoyer vers Google Agenda</button>
         <button class="ghost" id="btn-settings" aria-expanded="false">Réglages</button>
       </div>
     </div>
 
     <form class="drawer" id="settings" hidden>
       <div class="field full"><label for="s-name">Nom de l'engagement</label><input id="s-name" maxlength="80" placeholder="Ex. Restos du Cœur"></div>
-      <div class="field"><label for="s-goal">Heures promises</label><input id="s-goal" type="number" min="1" max="2000" step="0.5" inputmode="decimal"></div>
-      <div class="field"><label for="s-deadline">Échéance (facultatif)</label><input id="s-deadline" type="date"></div>
+      <div class="field full"><label for="s-goal">Heures promises par mois</label><input id="s-goal" type="number" min="1" max="2000" step="0.5" inputmode="decimal"></div>
       <div class="field full"><label for="s-default">Durée par défaut du bouton « 1 clic »</label>
         <select id="s-default"><option value="0.5">30 min</option><option value="1">1 h</option><option value="1.5">1 h 30</option><option value="2">2 h</option><option value="2.5">2 h 30</option><option value="3">3 h</option><option value="3.5">3 h 30</option><option value="4">4 h</option><option value="5">5 h</option><option value="6">6 h</option><option value="7">7 h</option><option value="8">8 h</option></select>
       </div>
+      <div class="field full"><label for="s-gcid">ID client Google (pour envoyer les séances vers l'agenda)</label><input id="s-gcid" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></div>
       <div class="row"><button type="button" class="ghost" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
+
+      <div class="reset">
+        <h2>Sauvegarde Google Drive</h2>
+        <p class="rhint">Une copie de toutes vos données est gardée dans un dossier caché de votre Google Drive. « Restaurer » remplace les données de cet appareil par cette copie (nouveau téléphone, réinstallation…).</p>
+        <div class="rrow">
+          <button type="button" class="secondary" id="b-save">Sauvegarder maintenant</button>
+          <button type="button" class="dangerbtn" id="b-restore" data-confirm="Confirmer : remplacer les données">Restaurer depuis Google Drive</button>
+        </div>
+        <p class="rhint" id="b-hint"></p>
+      </div>
 
       <div class="reset">
         <h2>Remettre les heures à zéro</h2>
@@ -285,22 +287,6 @@ svg .val{fill:var(--ink);font-weight:500}
       </div>
     </form>
 
-    <div class="drawer" id="syncbox" hidden>
-      <div class="full" style="display:flex;flex-direction:column;gap:8px">
-        <h2>Synchroniser vos appareils</h2>
-        <p class="syncstate" id="sync-state"></p>
-        <ol class="steps">
-          <li>Sur le premier appareil, touchez <b>Exporter</b> et envoyez-vous le fichier (Drive, mail, messagerie…).</li>
-          <li>Sur l'autre appareil, touchez <b>Importer</b> et choisissez ce fichier.</li>
-          <li>Les deux carnets sont fusionnés : rien n'est écrasé, les suppressions sont reportées.</li>
-        </ol>
-      </div>
-      <button type="button" class="primary" id="x-export">Exporter</button>
-      <button type="button" class="secondary" id="x-import">Importer</button>
-      <input type="file" id="x-file" accept="application/json,.json" hidden>
-      <div class="msg full" id="x-msg" hidden></div>
-    </div>
-
     <div class="big"><span class="done num" id="f-done">0</span><span class="of num" id="f-of">/ 30 h</span><span class="chip" id="f-status"></span></div>
     <div class="grid" id="cells" aria-hidden="true"></div>
     <div class="scale" id="scale"><span>0 h</span><span>30 h</span></div>
@@ -310,7 +296,6 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="fig"><span class="label">Restantes</span><b class="num" id="k-left">30 h</b></div>
       <div class="fig p"><span class="label">Planifiées</span><b class="num" id="k-plan">0 h</b></div>
     </div>
-    <div class="pace" id="pace"></div>
   </section>
 
   <nav class="tabs" role="tablist" aria-label="Sections">
@@ -331,7 +316,6 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="cal-grid" id="cal-grid"></div>
       <div class="cal-foot">
         <div class="legend"><span><i class="d"></i>Réalisées</span><span><i class="p"></i>Prévues</span><span><i class="t"></i>Aujourd'hui</span></div>
-        <button type="button" class="linkbtn" id="cal-today" hidden>Revenir à aujourd'hui</button>
       </div>
     </section>
 

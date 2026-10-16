@@ -1,6 +1,5 @@
 /* MyHours — suivi des heures de bénévolat, version hors ligne.
-   Toutes les données restent dans le navigateur (localStorage).
-   La synchronisation entre appareils se fait par export / import d'un fichier JSON, fusionné sans rien écraser. */
+   Toutes les données restent dans le navigateur (localStorage). Les séances à venir peuvent être envoyées vers Google Agenda. */
 
 /* ---------- Cœur : données et fusion (sans DOM, testable) ---------- */
 const CarnetCore = (() => {
@@ -22,69 +21,18 @@ const CarnetCore = (() => {
       entries: Array.isArray(d.entries) ? d.entries.filter(okEntry).map(e => ({ ...e, hours: Number(e.hours) })) : [],
       planned: Array.isArray(d.planned) ? d.planned.filter(okPlan).map(p => ({ ...p, hours: Number(p.hours) })) : [],
       deleted,
-      lastSync: typeof d.lastSync === "string" ? d.lastSync : "",
-      changes: Number.isFinite(d.changes) ? d.changes : 0
+      calRemove: Array.isArray(d.calRemove) ? d.calRemove.filter(x => typeof x === "string") : []
     };
   }
 
-  const stamp = x => x.updated || x.created || "";
-
-  /* Fusionne deux carnets : union par identifiant, la version la plus récente gagne,
-     les suppressions (pierres tombales) s'appliquent des deux côtés. */
-  function merge(local, incoming) {
-    const a = normalize(local), b = normalize(incoming);
-    const deleted = { ...a.deleted };
-    for (const [k, v] of Object.entries(b.deleted)) if (!deleted[k] || v > deleted[k]) deleted[k] = v;
-    const union = (x, y) => {
-      const m = new Map();
-      for (const it of [...x, ...y]) {
-        const cur = m.get(it.id);
-        if (!cur || stamp(it) > stamp(cur)) m.set(it.id, it);
-      }
-      return [...m.values()].filter(it => !deleted[it.id]);
-    };
-    const s = (b.settingsUpdated || "") > (a.settingsUpdated || "") ? b : a;
-    const merged = {
-      goal: s.goal, name: s.name, deadline: s.deadline, defaultHours: s.defaultHours, settingsUpdated: s.settingsUpdated,
-      entries: union(a.entries, b.entries),
-      planned: union(a.planned, b.planned),
-      deleted, lastSync: a.lastSync, changes: a.changes
-    };
-    const ids = arr => new Set(arr.map(x => x.id));
-    const aE = ids(a.entries), aP = ids(a.planned), bE = ids(b.entries), bP = ids(b.planned);
-    const report = {
-      addedEntries: merged.entries.filter(e => !aE.has(e.id)).length,
-      addedPlanned: merged.planned.filter(p => !aP.has(p.id)).length,
-      removed: (a.entries.length + a.planned.length) - (a.entries.filter(e => !deleted[e.id]).length + a.planned.filter(p => !deleted[p.id]).length),
-      localOnly: merged.entries.filter(e => !bE.has(e.id)).length + merged.planned.filter(p => !bP.has(p.id)).length
-        + Object.keys(a.deleted).filter(k => !b.deleted[k]).length
-        + ((a.settingsUpdated || "") > (b.settingsUpdated || "") ? 1 : 0)
-    };
-    return { merged, report };
-  }
-
-  function exportPayload(state) {
-    const s = normalize(state);
-    delete s.lastSync; delete s.changes;
-    return { app: "myhours", format: 1, exportedAt: nowIso(), data: s };
-  }
-
-  function parseImport(text) {
-    let obj;
-    try { obj = JSON.parse(text); } catch (e) { throw new Error("Ce fichier n'est pas un export MyHours (JSON illisible)."); }
-    if (!obj || !["myhours", "carnet-benevolat"].includes(obj.app) || !obj.data) throw new Error("Ce fichier ne vient pas de MyHours.");
-    if (obj.format > 1) throw new Error("Ce fichier vient d'une version plus récente de l'appli. Mettez cet appareil à jour (rechargez la page en ligne), puis réessayez.");
-    return normalize(obj.data);
-  }
-
-  return { normalize, merge, exportPayload, parseImport, DEFAULT_NAME };
+  return { normalize, DEFAULT_NAME };
 })();
 if (typeof module !== "undefined") module.exports = CarnetCore;
 
 /* ---------- Interface ---------- */
 if (typeof document !== "undefined") (function () {
   "use strict";
-  const { normalize, merge, exportPayload, parseImport, DEFAULT_NAME } = CarnetCore;
+  const { normalize, DEFAULT_NAME } = CarnetCore;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2, "0");
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -100,7 +48,6 @@ if (typeof document !== "undefined") (function () {
   const dfMon = new Intl.DateTimeFormat("fr-FR", { month: "short" });
   const dfMonth = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
   const dfFull = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-  const dfStamp = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -124,7 +71,7 @@ if (typeof document !== "undefined") (function () {
     catch (e) { storageOk = false; }
     $("#status").textContent = storageOk ? "Données enregistrées sur cet appareil." : "Impossible d'enregistrer sur cet appareil (stockage plein ou bloqué). Exportez vos données pour ne rien perdre.";
   }
-  function commit() { state.changes = (state.changes || 0) + 1; save(); render(); }
+  function commit() { save(); render(); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   /* ---------- calculs ---------- */
@@ -133,51 +80,38 @@ if (typeof document !== "undefined") (function () {
   function weekStart(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; }
   function calc() {
     const now = new Date();
-    const done = sum(state.entries, e => e.hours);
-    const plannedH = sum(state.planned, p => p.hours);
+    // L'objectif est mensuel : le compteur repart à zéro le 1er de chaque mois (l'historique est conservé).
+    const month = ymd(now).slice(0, 7);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59);
+    const done = sum(state.entries.filter(e => e.date.slice(0, 7) === month), e => e.hours);
+    const plannedH = sum(state.planned.filter(p => p.start.slice(0, 7) === month), p => p.hours);
     const left = Math.max(0, state.goal - done);
     const dates = state.entries.map(e => parseYmd(e.date)).sort((a, b) => a - b);
-    let rate = 0, finish = null;
-    if (dates.length) {
-      const days = Math.max(7, (now - dates[0]) / DAY + 1);
-      rate = done / (days / 7);
-      if (left > 0 && rate > 0) finish = new Date(now.getTime() + left / rate * 7 * DAY);
-    }
-    let needed = null, status = null;
-    if (state.deadline) {
-      const dl = parseYmd(state.deadline); dl.setHours(23, 59);
-      const weeksLeft = (dl - now) / (7 * DAY);
-      if (left <= 0) status = "done";
-      else if (weeksLeft <= 0) status = "late";
-      else {
-        needed = left / weeksLeft;
-        status = (done + plannedH >= state.goal) ? "covered" : (finish && finish <= dl) ? "ontrack" : dates.length ? "behind" : "start";
-      }
-    } else if (left <= 0) status = "done";
-    return { now, done, plannedH, left, rate, finish, needed, status, pct: Math.min(100, done / state.goal * 100) };
+    let rate = 0;
+    if (dates.length) rate = sum(state.entries, e => e.hours) / (Math.max(7, (now - dates[0]) / DAY + 1) / 7);
+    // Moins d'une semaine avant la fin du mois : tout ce qui reste est à faire « cette semaine ».
+    const needed = left > 0 ? left / Math.max(1, (monthEnd - now) / (7 * DAY)) : null;
+    const elapsed = (now - monthStart) / (monthEnd - monthStart);
+    const status = left <= 0 ? "done" : done + plannedH >= state.goal ? "covered" : done / state.goal >= elapsed ? "ontrack" : done > 0 ? "behind" : "start";
+    return { now, monthEnd, done, plannedH, left, rate, needed, status, pct: Math.min(100, done / state.goal * 100) };
   }
 
   /* ---------- rendu ---------- */
   function render() {
     const c = calc();
-    $("#h-name").textContent = state.name;
-    $("#h-sub").textContent = `Objectif ${num(state.goal)} h` + (state.deadline ? ` · avant le ${dfLong.format(parseYmd(state.deadline))}` : "");
+    $("#h-sub").textContent = `Objectif ${num(state.goal)} h par mois · ${dfMonth.format(c.now)}`;
     $("#f-done").textContent = num(c.done);
     $("#f-of").textContent = `/ ${num(state.goal)} h`;
     $("#k-done").textContent = `${num(c.done)} h`;
     $("#k-left").textContent = `${num(c.left)} h`;
     $("#k-plan").textContent = `${num(c.plannedH)} h`;
-    const map = { done: ["ok", "Objectif atteint"], covered: ["info", "Couvert par le planning"], ontrack: ["ok", "Dans les temps"], behind: ["warn", "En retard sur le rythme"], late: ["warn", "Échéance dépassée"], start: ["info", "À démarrer"] };
+    const map = { done: ["ok", "Objectif atteint"], covered: ["info", "Couvert par le planning"], ontrack: ["ok", "Dans les temps"], behind: ["warn", "En retard sur le rythme"], start: ["info", "À démarrer"] };
     const st = $("#f-status");
     if (c.status && map[c.status]) { st.className = "chip " + map[c.status][0]; st.textContent = map[c.status][1]; }
     else { st.className = "chip"; st.textContent = `${Math.round(c.pct)} %`; }
     renderCells(c);
-    const pace = [`<span><b>${Math.round(c.pct)} %</b> de l'objectif</span>`];
-    if (c.left > 0 && c.finish) pace.push(`<span>· à ce rythme, terminé vers le <b>${dfLong.format(c.finish)}</b></span>`);
-    if (c.needed != null && c.left > 0) pace.push(`<span>· il faut <b>${dur(c.needed)}</b> par semaine pour l'échéance</span>`);
-    if (c.left > 0 && c.done + c.plannedH >= state.goal) pace.push(`<span>· vos séances planifiées suffisent à finir</span>`);
-    $("#pace").innerHTML = pace.join(" ");
-    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderCal(); renderDay(); renderReset(); updatePreview();
+    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderCal(); renderDay(); renderReset(); updatePreview();
   }
   function renderCells(c) {
     const goal = state.goal;
@@ -206,6 +140,134 @@ if (typeof document !== "undefined") (function () {
     return "https://calendar.google.com/calendar/render?" + q.toString();
   }
 
+  /* ---------- Google Agenda : toutes les séances à venir envoyées en un bouton ----------
+     API Google Agenda appelée depuis le navigateur, sans serveur. Chaque séance a un identifiant d'événement
+     fixe, dérivé du sien : renvoyer met l'événement à jour au lieu de créer un doublon. Les séances annulées
+     après un envoi sont notées dans calRemove et retirées de l'agenda à l'envoi suivant. */
+  const GCID = LS + "-gcid";
+  const getGcid = () => { try { return localStorage.getItem(GCID) || ""; } catch (e) { return ""; } };
+  const setGcid = v => { try { v ? localStorage.setItem(GCID, v) : localStorage.removeItem(GCID); } catch (e) {} };
+  const gEventId = id => ("mh" + id.toLowerCase().replace(/[^a-v0-9]/g, "")).padEnd(5, "0");
+  let gToken = null, gTokenExp = 0;
+  function loadGis() {
+    if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+    return new Promise((ok, ko) => {
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+      s.onload = ok; s.onerror = () => { s.remove(); ko(new Error("Impossible de joindre Google. Vérifiez la connexion.")); };
+      document.head.appendChild(s);
+    });
+  }
+  async function gAuth() {
+    if (gToken && Date.now() < gTokenExp) return;
+    await loadGis();
+    await new Promise((ok, ko) => {
+      google.accounts.oauth2.initTokenClient({
+        client_id: getGcid(), scope: "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata",
+        callback: r => { if (r.error) { ko(new Error("Connexion Google refusée.")); return; } gToken = r.access_token; gTokenExp = Date.now() + (r.expires_in - 60) * 1000; ok(); },
+        error_callback: () => ko(new Error("Connexion Google annulée."))
+      }).requestAccessToken({ prompt: "" });
+    });
+  }
+  const gApi = (method, path, body) => fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events" + path, {
+    method, headers: { Authorization: "Bearer " + gToken, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined
+  });
+  /* Sauvegarde dans Google Drive, dans le dossier caché propre à l'appli (appDataFolder) :
+     un seul fichier, invisible dans le Drive, et l'appli n'a accès à rien d'autre. */
+  const BACKUP = "myhours-sauvegarde.json";
+  const LASTB = LS + "-lastbackup";
+  const gFetch = async (url, opts = {}) => {
+    const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + gToken, ...(opts.headers || {}) } });
+    if (r.status === 401) { gToken = null; throw new Error("Connexion Google expirée : réessayez."); }
+    return r;
+  };
+  async function backupFileId() {
+    const q = new URLSearchParams({ spaces: "appDataFolder", q: `name='${BACKUP}'`, fields: "files(id,modifiedTime)", orderBy: "modifiedTime desc" });
+    const r = await gFetch("https://www.googleapis.com/drive/v3/files?" + q);
+    if (!r.ok) throw new Error("Google Drive inaccessible. Vérifiez que l'API Google Drive est activée.");
+    const f = (await r.json()).files || [];
+    return f.length ? f[0] : null;
+  }
+  async function gBackup() {
+    const body = JSON.stringify({ app: "myhours", format: 1, savedAt: nowIso(), data: state });
+    const f = await backupFileId();
+    let r;
+    if (f) r = await gFetch(`https://www.googleapis.com/upload/drive/v3/files/${f.id}?uploadType=media`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body });
+    else {
+      const meta = JSON.stringify({ name: BACKUP, parents: ["appDataFolder"], mimeType: "application/json" }), b = "myhours" + Date.now();
+      r = await gFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+        method: "POST", headers: { "Content-Type": `multipart/related; boundary=${b}` },
+        body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`
+      });
+    }
+    if (!r.ok) throw new Error("La sauvegarde Google Drive a échoué.");
+    try { localStorage.setItem(LASTB, nowIso()); } catch (e) {}
+    renderBackup();
+  }
+  async function gRestore() {
+    const f = await backupFileId();
+    if (!f) throw new Error("Aucune sauvegarde trouvée dans Google Drive.");
+    const r = await gFetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`);
+    if (!r.ok) throw new Error("Lecture de la sauvegarde impossible.");
+    const obj = await r.json();
+    if (!obj || obj.app !== "myhours" || !obj.data) throw new Error("La sauvegarde est illisible.");
+    state = normalize(obj.data);
+    return obj.savedAt;
+  }
+  function renderBackup() {
+    let last = ""; try { last = localStorage.getItem(LASTB) || ""; } catch (e) {}
+    $("#b-hint").textContent = (last ? `Dernière sauvegarde depuis cet appareil : ${dfFull.format(new Date(last))} à ${new Date(last).toTimeString().slice(0, 5)}. ` : "Pas encore de sauvegarde depuis cet appareil. ")
+      + "Une copie est aussi faite à chaque envoi vers Google Agenda.";
+  }
+  const needGoogle = () => {
+    if (!getGcid()) { toast("Ajoutez d'abord votre ID client Google dans Réglages."); openDrawer("settings"); $("#s-gcid").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); return true; }
+    if (!navigator.onLine) { toast("Pas de réseau : réessayez une fois connecté."); return true; }
+    return false;
+  };
+  async function busy(btn, label, fn) {
+    const orig = btn.dataset.armed === "1" ? btn.dataset.orig : btn.textContent;
+    btn.dataset.armed = "0"; btn.disabled = true; btn.textContent = label;
+    try { await gAuth(); await fn(); } catch (e) { toast(e.message || "Opération Google impossible."); }
+    finally { btn.disabled = false; btn.textContent = orig; }
+  }
+
+  function gEvent(p) {
+    const s = parseLocal(p.start), e = endOf(p);
+    let tz = "Europe/Paris"; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch (err) {}
+    const when = p.allDay ? { start: { date: ymd(s) }, end: { date: ymd(e) } } : { start: { dateTime: localIso(s), timeZone: tz }, end: { dateTime: localIso(e), timeZone: tz } };
+    return { id: gEventId(p.id), summary: p.title, location: p.location || "", description: `${p.title} · ${dur(p.hours)} · ${state.name}\nAjouté par MyHours.`, status: "confirmed", ...when };
+  }
+  async function gSync() {
+    const btn = $("#gcal-sync");
+    if (needGoogle()) return;
+    btn.disabled = true; btn.textContent = "Envoi…";
+    let sent = 0, removed = 0, failed = 0;
+    try {
+      await gAuth();
+      const expired = r => { if (r.status === 401) { gToken = null; throw new Error("Connexion Google expirée : touchez à nouveau le bouton."); } return r; };
+      for (const p of state.planned.filter(p => endOf(p) > new Date())) {
+        const ev = gEvent(p);
+        let r = expired(await gApi("PUT", "/" + ev.id, ev));
+        if (r.status === 404) r = expired(await gApi("POST", "", ev));
+        if (r.ok) { sent++; p.calAdded = true; } else failed++;
+      }
+      for (const id of [...state.calRemove]) {
+        const r = expired(await gApi("DELETE", "/" + gEventId(id)));
+        if (r.ok || r.status === 404 || r.status === 410) { state.calRemove = state.calRemove.filter(x => x !== id); removed++; } else failed++;
+      }
+      save();
+      const backed = await gBackup().then(() => true, () => false);
+      toast((failed ? `${failed} séance(s) n'ont pas pu être envoyées. Réessayez.`
+        : `Google Agenda à jour : ${sent} séance${sent > 1 ? "s" : ""} à venir` + (removed ? `, ${removed} retirée${removed > 1 ? "s" : ""}` : ""))
+        + (backed ? " · sauvegarde Drive faite" : " · sauvegarde Drive impossible"));
+    } catch (e) {
+      toast(e.message || "Envoi vers Google Agenda impossible.");
+    } finally {
+      save(); render();
+      btn.disabled = false; btn.textContent = "Envoyer vers Google Agenda";
+    }
+  }
+
   function renderTodo(c) {
     const past = state.planned.filter(p => endOf(p) <= c.now).sort((a, b) => a.start.localeCompare(b.start));
     $("#todo-box").hidden = !past.length;
@@ -225,7 +287,7 @@ if (typeof document !== "undefined") (function () {
       return `<div class="item" data-id="${esc(p.id)}">${dateBlock(d)}
         <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}${p.calAdded ? '<span class="chip info">Ajoutée à l\'agenda</span>' : ""}</div></div>
         <div class="dur">${dur(p.hours)}</div>
-        <div class="acts"><a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Google Agenda</a>
+        <div class="acts">${getGcid() ? "" : `<a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Google Agenda</a>`}
         <button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Annuler la séance</button></div></div>`;
     }).join("") : `<p class="empty">Aucune séance prévue. Planifiez-en une ci-dessus pour organiser vos heures restantes.</p>`;
   }
@@ -256,15 +318,15 @@ if (typeof document !== "undefined") (function () {
       [e.length ? dur(avg) : "–", "en moyenne par séance"],
       [`${num(monthH)} h`, `en ${dfMonth.format(now).split(" ")[0]}`],
       [c.rate ? dur(c.rate) : "–", "par semaine en moyenne"],
-      [c.left > 0 ? (c.finish ? dfDM.format(c.finish) : "–") : "Atteint", "fin estimée à ce rythme"],
-      [c.needed != null && c.left > 0 ? dur(c.needed) : (state.deadline ? "–" : "Aucune"), state.deadline ? "par semaine pour l'échéance" : "échéance définie"]
+      [c.left > 0 ? `${num(c.left)} h` : "Atteint", "restantes ce mois-ci"],
+      [c.needed != null ? dur(c.needed) : "–", "par semaine pour finir le mois"]
     ];
     $("#kpis").innerHTML = kp.map(([v, l]) => `<div class="kpi"><b class="num">${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
 
     const ws = weekStart(now), weeks = [];
     for (let i = 7; i >= 0; i--) { const s = new Date(ws); s.setDate(s.getDate() - 7 * i); weeks.push({ s, h: 0 }); }
     e.forEach(x => { const k = weekStart(parseYmd(x.date)).getTime(); const w = weeks.find(w => w.s.getTime() === k); if (w) w.h += x.hours; });
-    const pace = c.needed != null && c.left > 0 ? c.needed : null;
+    const pace = c.needed;
     const maxV = Math.max(1, ...weeks.map(w => w.h), pace || 0);
     const step = maxV <= 4 ? 1 : maxV <= 10 ? 2 : maxV <= 25 ? 5 : 10;
     const top = Math.ceil(maxV / step) * step;
@@ -283,7 +345,7 @@ if (typeof document !== "undefined") (function () {
     });
     if (pace) svg += `<line class="pace-l" x1="${L}" x2="${W - R}" y1="${y(pace)}" y2="${y(pace)}"/>`;
     $("#chart").innerHTML = svg + "</svg>";
-    $("#chart-hint").textContent = "8 dernières semaines, du lundi au dimanche" + (pace ? ` · pointillés : rythme à tenir pour l'échéance (${dur(pace)} par semaine)` : "");
+    $("#chart-hint").textContent = "8 dernières semaines, du lundi au dimanche" + (pace ? ` · pointillés : rythme à tenir pour finir le mois (${dur(pace)} par semaine)` : "");
 
     const names = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"], wd = [0, 0, 0, 0, 0, 0, 0];
     e.forEach(x => { wd[(parseYmd(x.date).getDay() + 6) % 7] += x.hours; });
@@ -291,12 +353,6 @@ if (typeof document !== "undefined") (function () {
     $("#weekdays").innerHTML = e.length
       ? wd.map((v, i) => `<div class="wd"><span>${names[i]}</span><div class="tr"><span style="width:${mw ? v / mw * 100 : 0}%"></span></div><span class="v num">${v ? num(v) + " h" : "–"}</span></div>`).join("")
       : `<p class="empty">Les statistiques apparaîtront après votre première saisie.</p>`;
-  }
-  function renderSyncState() {
-    const ch = state.changes || 0;
-    $("#sync-dot").hidden = !ch;
-    const last = state.lastSync ? `Dernière synchronisation : <b>${esc(dfStamp.format(new Date(state.lastSync)))}</b>.` : "Pas encore synchronisé.";
-    $("#sync-state").innerHTML = `${last} ${ch ? `<b>${ch}</b> modification${ch > 1 ? "s" : ""} depuis.` : "Rien de nouveau depuis."}`;
   }
 
   /* ---------- remise à zéro (toutes les heures ou un mois) ---------- */
@@ -317,7 +373,7 @@ if (typeof document !== "undefined") (function () {
     const list = resetTargets($("#r-scope").value), n = list.length;
     $("#r-go").disabled = !n;
     $("#r-hint").textContent = n
-      ? `${num(sum(list, e => e.hours))} h sur ${n} saisie${n > 1 ? "s" : ""} seront effacées, aussi sur vos autres appareils à la prochaine synchronisation.`
+      ? `${num(sum(list, e => e.hours))} h sur ${n} saisie${n > 1 ? "s" : ""} seront effacées.`
       : "Aucune heure à effacer.";
   }
   $("#r-scope").addEventListener("change", () => { disarmReset(); updateResetHint(); });
@@ -331,7 +387,7 @@ if (typeof document !== "undefined") (function () {
     ids.forEach(id => tomb(id));
     commit();
     toast(v === "all" ? `Toutes les heures remises à zéro (${num(h)} h)` : `${monthLabel(v)} remis à zéro (${num(h)} h)`, () => {
-      // Restaurées sous de nouveaux identifiants, pour que la synchronisation ne les efface pas à nouveau.
+      // Restaurées sous de nouveaux identifiants (les anciens restent marqués comme supprimés).
       const t = nowIso();
       list.forEach(e => state.entries.push({ ...e, id: uid(), updated: t }));
       commit(); toast("Remise à zéro annulée");
@@ -391,67 +447,24 @@ if (typeof document !== "undefined") (function () {
     tt = setTimeout(() => t.classList.remove("on"), undo ? 6000 : 2800);
   }
 
-  /* ---------- tiroirs : réglages et synchronisation ---------- */
+  /* ---------- tiroir des réglages ---------- */
   function openDrawer(which) {
-    const set = which === "settings", syn = which === "sync";
+    const set = which === "settings";
     $("#settings").hidden = !set; $("#btn-settings").setAttribute("aria-expanded", String(set));
-    $("#syncbox").hidden = !syn; $("#btn-sync").setAttribute("aria-expanded", String(syn));
-    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-deadline").value = state.deadline || ""; setDefaultSelect(); disarmReset(); renderReset(); $("#s-goal").focus(); }
-    if (syn) { $("#x-msg").hidden = true; renderSyncState(); }
+    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-gcid").value = getGcid(); renderBackup(); setDefaultSelect(); disarmReset(); renderReset(); $("#s-goal").focus(); }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
-  $("#btn-sync").addEventListener("click", () => openDrawer($("#syncbox").hidden ? "sync" : null));
   $("#s-cancel").addEventListener("click", () => openDrawer(null));
   $("#settings").addEventListener("submit", ev => {
     ev.preventDefault();
     const g = parseFloat(String($("#s-goal").value).replace(",", "."));
     if (!(g > 0)) { toast("Indiquez un nombre d'heures supérieur à 0."); return; }
-    state.goal = g; state.name = $("#s-name").value.trim() || DEFAULT_NAME; state.deadline = $("#s-deadline").value || "";
+    state.goal = g; state.name = $("#s-name").value.trim() || DEFAULT_NAME;
     state.defaultHours = parseFloat($("#s-default").value) || 2;
+    setGcid($("#s-gcid").value.trim());
+    if (getGcid() && navigator.onLine) loadGis().catch(() => {});
     state.settingsUpdated = nowIso();
     openDrawer(null); commit(); toast("Réglages enregistrés");
-  });
-
-  function xmsg(t, ok) { const m = $("#x-msg"); m.hidden = !t; m.textContent = t || ""; m.className = "msg full" + (ok ? " okm" : ""); }
-
-  $("#x-export").addEventListener("click", async () => {
-    const json = JSON.stringify(exportPayload(state), null, 2);
-    const name = `myhours-${ymd(new Date())}.json`;
-    let file = null;
-    try { file = new File([json], name, { type: "application/json" }); } catch (e) {}
-    try {
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "MyHours" });
-      } else {
-        const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-        const a = document.createElement("a"); a.href = url; a.download = name;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
-      }
-    } catch (e) {
-      if (e && e.name === "AbortError") return;
-      xmsg("L'export n'a pas pu être envoyé. Réessayez, ou utilisez un autre navigateur."); return;
-    }
-    state.lastSync = nowIso(); state.changes = 0; save(); render();
-    xmsg(`Fichier « ${name} » créé. Importez-le sur votre autre appareil.`, true);
-  });
-  $("#x-import").addEventListener("click", () => { $("#x-file").value = ""; $("#x-file").click(); });
-  $("#x-file").addEventListener("change", async () => {
-    const f = $("#x-file").files && $("#x-file").files[0];
-    if (!f) return;
-    let incoming;
-    try { incoming = parseImport(await f.text()); }
-    catch (e) { xmsg(e.message || "Ce fichier n'a pas pu être lu."); return; }
-    const { merged, report } = merge(state, incoming);
-    state = merged; state.lastSync = nowIso(); state.changes = report.localOnly;
-    save(); render();
-    const parts = [];
-    if (report.addedEntries) parts.push(`${report.addedEntries} saisie${report.addedEntries > 1 ? "s" : ""} ajoutée${report.addedEntries > 1 ? "s" : ""}`);
-    if (report.addedPlanned) parts.push(`${report.addedPlanned} séance${report.addedPlanned > 1 ? "s" : ""} planifiée${report.addedPlanned > 1 ? "s" : ""} ajoutée${report.addedPlanned > 1 ? "s" : ""}`);
-    if (report.removed) parts.push(`${report.removed} suppression${report.removed > 1 ? "s" : ""} appliquée${report.removed > 1 ? "s" : ""}`);
-    let txt = parts.length ? `Import terminé : ${parts.join(", ")}.` : "Import terminé : ce carnet était déjà à jour.";
-    if (report.localOnly) txt += " Cet appareil a aussi des données que l'autre n'a pas : exportez maintenant et importez le fichier là-bas pour que les deux soient identiques.";
-    xmsg(txt, true);
   });
 
   /* ---------- calendrier de saisie ---------- */
@@ -498,7 +511,6 @@ if (typeof document !== "undefined") (function () {
       html += `<button type="button" class="${cls}" data-d="${k}" aria-label="${esc(label)}" aria-pressed="${k === sel}"><span class="n">${d.getDate()}</span><span class="h">${dh ? short(dh) : ph ? short(ph) : ""}</span></button>`;
     }
     $("#cal-grid").innerHTML = html;
-    const tm = new Date(); $("#cal-today").hidden = sel === t && view.getFullYear() === tm.getFullYear() && view.getMonth() === tm.getMonth();
   }
   function dayName(k) {
     const t = parseYmd(today()), d = parseYmd(k), diff = Math.round((d - t) / DAY);
@@ -522,13 +534,13 @@ if (typeof document !== "undefined") (function () {
       <div class="w"><b>${dur(p.hours)}</b><span>${esc(p.title)} · ${timeLabel(p)}${ended ? " · à valider" : ""}</span></div>
       <div class="acts">${ended
         ? `<input class="mini num" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" value="${p.hours}" aria-label="Heures faites"><button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button>`
-        : `<a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Agenda</a><button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Retirer</button>`}</div></div>`;
+        : `${getGcid() ? "" : `<a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Agenda</a>`}<button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Retirer</button>`}</div></div>`;
     }).join("");
     $("#day-list").innerHTML = html;
     const tot = sum(ents, e => e.hours), ptot = sum(plans, p => p.hours);
     $("#day-hint").textContent = fut
-      ? (ptot ? `${dur(ptot)} prévues ce jour-là. Choisissez le type, puis un appui ajoute une prévision.` : "Choisissez le type, puis un appui ajoute une prévision pour ce jour-là.")
-      : (tot ? `${dur(tot)} réalisées ce jour-là. Choisissez le type, puis un appui en ajoute.` : `Choisissez le type, puis un appui ajoute les heures faites ${k === today() ? "aujourd'hui" : "ce jour-là"}.`);
+      ? (ptot ? `${dur(ptot)} prévues ce jour-là. Choisissez le type, puis touchez une durée et confirmez pour la prévoir.` : "Choisissez le type, puis touchez une durée et confirmez pour la prévoir ce jour-là.")
+      : (tot ? `${dur(tot)} réalisées ce jour-là. Choisissez le type, puis touchez une durée et confirmez pour en ajouter.` : `Choisissez le type, puis touchez une durée et confirmez pour ajouter les heures faites ${k === today() ? "aujourd'hui" : "ce jour-là"}.`);
     $("#d-time-f").hidden = !fut;
     const v = parseFloat($("#d-hours").value);
     $("#d-submit").textContent = `${fut ? "Prévoir" : "Ajouter"} ${v > 0 ? dur(v) : ""}`.trim();
@@ -574,7 +586,6 @@ if (typeof document !== "undefined") (function () {
   function shiftMonth(n) { view = new Date(view.getFullYear(), view.getMonth() + n, 1); renderCal(); }
   $("#cal-prev").addEventListener("click", () => shiftMonth(-1));
   $("#cal-next").addEventListener("click", () => shiftMonth(1));
-  $("#cal-today").addEventListener("click", () => { sel = today(); const d = new Date(); view = new Date(d.getFullYear(), d.getMonth(), 1); renderCal(); renderDay(); });
   let tx = null, ty = null;
   $("#cal-grid").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
   $("#cal-grid").addEventListener("touchend", e => {
@@ -585,6 +596,16 @@ if (typeof document !== "undefined") (function () {
 
   $("#qbtns").addEventListener("click", ev => {
     const b = ev.target.closest(".qbtn"); if (!b) return;
+    // Deux appuis : le premier demande confirmation (3,5 s), le second ajoute.
+    const small = b.querySelector("small");
+    const disarm = x => { if (x.dataset.armed === "1") { x.dataset.armed = "0"; x.querySelector("small").textContent = x.dataset.orig; } };
+    $("#qbtns").querySelectorAll(".qbtn").forEach(x => { if (x !== b) disarm(x); });
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.dataset.orig = small.textContent; small.textContent = "Confirmer ?";
+      setTimeout(() => { if (b.isConnected) disarm(b); }, 3500);
+      return;
+    }
+    disarm(b);
     addOn(sel, parseFloat(b.dataset.q), curType, "");
     const fresh = $(`#qbtns .qbtn[data-q="${b.dataset.q}"]`);
     if (fresh) { fresh.classList.add("flash"); setTimeout(() => fresh.classList.remove("flash"), 700); }
@@ -597,6 +618,23 @@ if (typeof document !== "undefined") (function () {
     addOn(sel, hrs, $("#d-note").value, isFuture(sel) ? $("#d-time").value : "");
     $("#d-time").value = ""; $("#day-more").open = false;
   });
+  $("#gcal-sync").addEventListener("click", gSync);
+  $("#b-save").addEventListener("click", ev => {
+    if (needGoogle()) return;
+    busy(ev.currentTarget, "Sauvegarde…", async () => { await gBackup(); toast("Sauvegarde Google Drive faite"); });
+  });
+  $("#b-restore").addEventListener("click", ev => {
+    const btn = ev.currentTarget;
+    if (btn.dataset.armed !== "1" && needGoogle()) return;
+    if (!armed(btn)) return;
+    busy(btn, "Restauration…", async () => {
+      const when = await gRestore();
+      save(); render(); openDrawer(null);
+      toast(`Données restaurées${when ? ` (sauvegarde du ${dfFull.format(new Date(when))})` : ""}`);
+    });
+  });
+  // Préchargé pour que la fenêtre de connexion Google s'ouvre directement au clic (sinon le navigateur peut la bloquer).
+  if (getGcid() && navigator.onLine) loadGis().catch(() => {});
   $("#q-edit").addEventListener("click", () => { openDrawer("settings"); $("#s-default").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 
   /* ---------- planification ---------- */
@@ -659,7 +697,10 @@ if (typeof document !== "undefined") (function () {
     } else if (act === "skip" || act === "cancel") {
       if (!armed(btn)) return;
       state.planned = state.planned.filter(x => x.id !== id); tomb(id);
+      const inCal = act === "cancel" && p.calAdded && getGcid();
+      if (inCal) state.calRemove.push(id);
       commit();
+      if (inCal) { toast("Séance annulée. Elle sera retirée de Google Agenda au prochain envoi."); return; }
       toast(act === "skip" ? "Séance retirée du suivi" : (p.calAdded ? "Séance annulée. Pensez à la retirer aussi de votre agenda." : "Séance annulée"));
     }
   });
@@ -689,7 +730,10 @@ if (typeof document !== "undefined") (function () {
   window.addEventListener("appinstalled", () => { $("#install").hidden = true; toast("Appli installée"); });
 
   /* Mises à jour : le service worker revérifie les fichiers en arrière-plan et prévient quand l'un a changé. */
-  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  // En aperçu local (apercu.bat), pas de service worker : chaque F5 montre directement les derniers changements.
+  const local = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
+  if (local && "serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+  if ("serviceWorker" in navigator && !local) {
     const hadController = !!navigator.serviceWorker.controller;
     const showUpdate = () => { $("#update").hidden = false; };
     navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "update-available") showUpdate(); });
