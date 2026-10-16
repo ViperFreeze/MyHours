@@ -104,9 +104,16 @@ if (typeof document !== "undefined") (function () {
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const cap = s => s.replace(/^./, c => c.toUpperCase());
   const nowIso = () => new Date().toISOString();
   const DAY = 864e5;
   const LS = "carnet-benevolat-v1";
+
+  /* Types d'activité : « Prédic » par défaut. */
+  const TYPES = ["Prédic", "Étude", "Présentoir"];
+  const DEFAULT_TYPE = TYPES[0];
+  let curType = DEFAULT_TYPE;
+  try { const t = localStorage.getItem(LS + "-type"); if (TYPES.includes(t)) curType = t; } catch (e) {}
 
   /* ---------- stockage local ---------- */
   function load() { try { const r = localStorage.getItem(LS); return r ? normalize(JSON.parse(r)) : normalize({}); } catch (e) { return normalize({}); } }
@@ -170,7 +177,7 @@ if (typeof document !== "undefined") (function () {
     if (c.needed != null && c.left > 0) pace.push(`<span>· il faut <b>${dur(c.needed)}</b> par semaine pour l'échéance</span>`);
     if (c.left > 0 && c.done + c.plannedH >= state.goal) pace.push(`<span>· vos séances planifiées suffisent à finir</span>`);
     $("#pace").innerHTML = pace.join(" ");
-    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderQuick(); updatePreview(); updateLogBtn();
+    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderQuick(); renderReset(); updatePreview(); updateLogBtn();
   }
   function renderCells(c) {
     const goal = state.goal;
@@ -180,9 +187,9 @@ if (typeof document !== "undefined") (function () {
     g.style.gridTemplateColumns = n <= 30 ? `repeat(auto-fill,minmax(${n <= 15 ? 28 : 22}px,1fr))` : "repeat(auto-fill,minmax(16px,1fr))";
     let html = "";
     for (let i = 0; i < n; i++) {
-      const cap = Math.min(unit, goal - i * unit);
-      const d = Math.max(0, Math.min(1, (c.done - i * unit) / cap));
-      const p = Math.max(0, Math.min(1 - d, (c.done + c.plannedH - i * unit) / cap - d));
+      const capH = Math.min(unit, goal - i * unit);
+      const d = Math.max(0, Math.min(1, (c.done - i * unit) / capH));
+      const p = Math.max(0, Math.min(1 - d, (c.done + c.plannedH - i * unit) / capH - d));
       html += `<div class="cell"${n > 30 ? ' style="height:20px"' : ""}>${d > 0 ? `<span class="d" style="width:${d * 100}%"></span>` : ""}${p > 0 ? `<span class="p" style="left:${d * 100}%;width:${p * 100}%"></span>` : ""}</div>`;
     }
     g.innerHTML = html;
@@ -193,7 +200,7 @@ if (typeof document !== "undefined") (function () {
   function gcalUrl(p) {
     const s = parseLocal(p.start), e = endOf(p);
     const f = p.allDay ? d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` : d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-    const q = new URLSearchParams({ action: "TEMPLATE", text: p.title, dates: `${f(s)}/${f(e)}`, details: `Séance de bénévolat · ${state.name} · objectif ${num(state.goal)} h.` });
+    const q = new URLSearchParams({ action: "TEMPLATE", text: p.title, dates: `${f(s)}/${f(e)}`, details: `${p.title} · ${state.name} · objectif ${num(state.goal)} h.` });
     try { q.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (err) {}
     if (p.location) q.set("location", p.location);
     return "https://calendar.google.com/calendar/render?" + q.toString();
@@ -233,7 +240,7 @@ if (typeof document !== "undefined") (function () {
       html += `<div class="month"><span>${esc(dfMonth.format(new Date(y, m - 1, 1)))}</span><span class="num">${num(sum(groups[k], x => x.hours))} h</span></div>`;
       groups[k].forEach(x => {
         html += `<div class="item" data-eid="${esc(x.id)}">${dateBlock(parseYmd(x.date))}
-          <div class="what"><div class="t">${esc(x.note || "Séance de bénévolat")}</div><div class="s">${x.source === "planning" ? '<span class="chip info">Planifiée</span>' : ""}</div></div>
+          <div class="what"><div class="t">${esc(x.note || DEFAULT_TYPE)}</div><div class="s">${x.source === "planning" ? '<span class="chip info">Planifiée</span>' : ""}</div></div>
           <div class="dur">${dur(x.hours)}</div>
           <div class="acts"><button class="sbtn del" data-act="del-entry" data-confirm="Confirmer la suppression">Supprimer</button></div></div>`;
       });
@@ -292,6 +299,45 @@ if (typeof document !== "undefined") (function () {
     $("#sync-state").innerHTML = `${last} ${ch ? `<b>${ch}</b> modification${ch > 1 ? "s" : ""} depuis.` : "Rien de nouveau depuis."}`;
   }
 
+  /* ---------- remise à zéro (toutes les heures ou un mois) ---------- */
+  const monthLabel = k => { const [y, m] = k.split("-").map(Number); return cap(dfMonth.format(new Date(y, m - 1, 1))); };
+  const resetTargets = v => state.entries.filter(e => v === "all" || e.date.slice(0, 7) === v);
+  function disarmReset() { const b = $("#r-go"); if (b.dataset.armed === "1") { b.dataset.armed = "0"; b.textContent = b.dataset.orig; } }
+  function renderReset() {
+    const sel = $("#r-scope"), prev = sel.value;
+    const months = {};
+    state.entries.forEach(e => { const k = e.date.slice(0, 7); months[k] = (months[k] || 0) + e.hours; });
+    let html = `<option value="all">Toutes les heures (${num(sum(state.entries, e => e.hours))} h)</option>`;
+    Object.keys(months).sort().reverse().forEach(k => { html += `<option value="${k}">${esc(monthLabel(k))} (${num(months[k])} h)</option>`; });
+    sel.innerHTML = html;
+    if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+    updateResetHint();
+  }
+  function updateResetHint() {
+    const list = resetTargets($("#r-scope").value), n = list.length;
+    $("#r-go").disabled = !n;
+    $("#r-hint").textContent = n
+      ? `${num(sum(list, e => e.hours))} h sur ${n} saisie${n > 1 ? "s" : ""} seront effacées, aussi sur vos autres appareils à la prochaine synchronisation.`
+      : "Aucune heure à effacer.";
+  }
+  $("#r-scope").addEventListener("change", () => { disarmReset(); updateResetHint(); });
+  $("#r-go").addEventListener("click", ev => {
+    const btn = ev.currentTarget, v = $("#r-scope").value, list = resetTargets(v);
+    if (!list.length) return;
+    if (!armed(btn)) return;
+    disarmReset();
+    const ids = new Set(list.map(e => e.id)), h = sum(list, e => e.hours);
+    state.entries = state.entries.filter(e => !ids.has(e.id));
+    ids.forEach(id => tomb(id));
+    commit();
+    toast(v === "all" ? `Toutes les heures remises à zéro (${num(h)} h)` : `${monthLabel(v)} remis à zéro (${num(h)} h)`, () => {
+      // Restaurées sous de nouveaux identifiants, pour que la synchronisation ne les efface pas à nouveau.
+      const t = nowIso();
+      list.forEach(e => state.entries.push({ ...e, id: uid(), updated: t }));
+      commit(); toast("Remise à zéro annulée");
+    });
+  });
+
   /* ---------- onglets ---------- */
   const TABS = ["log", "plan", "stats", "hist"];
   function showTab(t) {
@@ -304,7 +350,7 @@ if (typeof document !== "undefined") (function () {
   showTab(TABS.includes(startTab) ? startTab : "log");
 
   /* ---------- puces de durée ---------- */
-  document.querySelectorAll(".chips").forEach(box => {
+  document.querySelectorAll(".chips[data-for]").forEach(box => {
     const inp = document.getElementById(box.dataset.for);
     [1, 1.5, 2, 3, 4].forEach(v => {
       const b = document.createElement("button");
@@ -315,6 +361,21 @@ if (typeof document !== "undefined") (function () {
     const sync = () => box.querySelectorAll(".dchip").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.h === +inp.value)));
     inp.addEventListener("input", sync); sync();
   });
+
+  /* ---------- puces de type (saisie rapide) ---------- */
+  const qType = $("#q-type");
+  TYPES.forEach(t => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "dchip"; b.textContent = t; b.dataset.type = t;
+    b.addEventListener("click", () => {
+      curType = t;
+      try { localStorage.setItem(LS + "-type", t); } catch (e) {}
+      syncTypeChips();
+    });
+    qType.appendChild(b);
+  });
+  function syncTypeChips() { qType.querySelectorAll(".dchip").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.type === curType))); }
+  syncTypeChips();
 
   let tt;
   function toast(m, undo) {
@@ -330,12 +391,12 @@ if (typeof document !== "undefined") (function () {
     tt = setTimeout(() => t.classList.remove("on"), undo ? 6000 : 2800);
   }
 
-  /* ---------- tiroirs : objectif et synchronisation ---------- */
+  /* ---------- tiroirs : réglages et synchronisation ---------- */
   function openDrawer(which) {
     const set = which === "settings", syn = which === "sync";
     $("#settings").hidden = !set; $("#btn-settings").setAttribute("aria-expanded", String(set));
     $("#syncbox").hidden = !syn; $("#btn-sync").setAttribute("aria-expanded", String(syn));
-    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-deadline").value = state.deadline || ""; setDefaultSelect(); $("#s-goal").focus(); }
+    if (set) { $("#s-name").value = state.name; $("#s-goal").value = state.goal; $("#s-deadline").value = state.deadline || ""; setDefaultSelect(); disarmReset(); renderReset(); $("#s-goal").focus(); }
     if (syn) { $("#x-msg").hidden = true; renderSyncState(); }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
@@ -348,7 +409,7 @@ if (typeof document !== "undefined") (function () {
     state.goal = g; state.name = $("#s-name").value.trim() || DEFAULT_NAME; state.deadline = $("#s-deadline").value || "";
     state.defaultHours = parseFloat($("#s-default").value) || 2;
     state.settingsUpdated = nowIso();
-    openDrawer(null); commit(); toast("Objectif enregistré");
+    openDrawer(null); commit(); toast("Réglages enregistrés");
   });
 
   function xmsg(t, ok) { const m = $("#x-msg"); m.hidden = !t; m.textContent = t || ""; m.className = "msg full" + (ok ? " okm" : ""); }
@@ -411,24 +472,24 @@ if (typeof document !== "undefined") (function () {
     const tt2 = $("#today-tot");
     tt2.textContent = tot ? `${dur(tot)} saisie${tot > 1 ? "s" : ""} aujourd'hui` : "Rien de saisi";
     tt2.classList.toggle("has", tot > 0);
-    $("#q-date").textContent = `${dfFull.format(new Date()).replace(/^./, c => c.toUpperCase())} · un appui ajoute les heures faites aujourd'hui.`;
+    $("#q-date").textContent = `${cap(dfFull.format(new Date()))} · choisissez le type, puis un appui ajoute les heures faites aujourd'hui.`;
     const vals = quickValues(), key = vals.join("|") + "/" + state.defaultHours;
     if (key === quickKey) return;
     quickKey = key;
     $("#qbtns").innerHTML = vals.map(v => {
       const main = v === state.defaultHours;
-      return `<button type="button" class="qbtn${main ? " main" : ""}" data-q="${v}" aria-label="Ajouter ${dur(v)} aujourd'hui${main ? " (durée par défaut)" : ""}">+${dur(v).replace(/ /g, "\u00a0")}${main ? "<small>par défaut</small>" : ""}</button>`;
+      return `<button type="button" class="qbtn${main ? " main" : ""}" data-q="${v}" aria-label="Ajouter ${dur(v)} aujourd'hui${main ? " (durée par défaut)" : ""}">+${dur(v).replace(/ /g, " ")}${main ? "<small>par défaut</small>" : ""}</button>`;
     }).join("");
   }
   $("#qbtns").addEventListener("click", ev => {
     const b = ev.target.closest(".qbtn"); if (!b) return;
     const hrs = parseFloat(b.dataset.q), t = nowIso(), id = uid();
-    state.entries.push({ id, date: ymd(new Date()), hours: hrs, note: "", source: "rapide", created: t, updated: t });
+    state.entries.push({ id, date: ymd(new Date()), hours: hrs, note: curType, source: "rapide", created: t, updated: t });
     commit();
     const fresh = $(`#qbtns .qbtn[data-q="${hrs}"]`);
     if (fresh) { fresh.classList.add("flash"); setTimeout(() => fresh.classList.remove("flash"), 700); }
     if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
-    toast(`+${dur(hrs)} aujourd'hui`, () => {
+    toast(`+${dur(hrs)} ${curType} aujourd'hui`, () => {
       state.entries = state.entries.filter(e => e.id !== id); tomb(id);
       commit(); toast("Saisie annulée");
     });
@@ -452,17 +513,17 @@ if (typeof document !== "undefined") (function () {
     ev.preventDefault();
     const hrs = parseFloat($("#e-hours").value), date = $("#e-date").value;
     if (!(hrs > 0) || !date) { toast("Indiquez une date et une durée."); return; }
-    const t = nowIso(), id = uid(), h = Math.round(hrs * 100) / 100, note = $("#e-note").value.trim();
+    const t = nowIso(), id = uid(), h = Math.round(hrs * 100) / 100, type = $("#e-note").value || DEFAULT_TYPE;
     let msg;
     if (isFuture(date)) {
       const time = $("#e-time").value;
-      state.planned.push({ id, title: note || "Bénévolat", start: `${date}T${time || "00:00"}:00`, allDay: !time, hours: h, location: "", created: t, updated: t });
-      msg = `${dur(h)} prévues le ${dfDM.format(parseYmd(date))}`;
+      state.planned.push({ id, title: type, start: `${date}T${time || "00:00"}:00`, allDay: !time, hours: h, location: "", created: t, updated: t });
+      msg = `${dur(h)} ${type} prévues le ${dfDM.format(parseYmd(date))}`;
     } else {
-      state.entries.push({ id, date, hours: h, note, source: "manuel", created: t, updated: t });
-      msg = `${dur(h)} ajoutées le ${dfDM.format(parseYmd(date))}`;
+      state.entries.push({ id, date, hours: h, note: type, source: "manuel", created: t, updated: t });
+      msg = `${dur(h)} ${type} ajoutées le ${dfDM.format(parseYmd(date))}`;
     }
-    $("#e-note").value = ""; $("#e-time").value = "";
+    $("#e-time").value = "";
     $("#e-date").value = ymd(new Date());
     commit();
     toast(msg, () => {
@@ -485,7 +546,7 @@ if (typeof document !== "undefined") (function () {
   ["#p-hours", "#p-repeat"].forEach(s => $(s).addEventListener("input", updatePreview));
   $("#f-plan").addEventListener("submit", ev => {
     ev.preventDefault();
-    const title = $("#p-title").value.trim() || "Bénévolat", date = $("#p-date").value, time = $("#p-time").value, hrs = parseFloat($("#p-hours").value);
+    const title = $("#p-title").value || DEFAULT_TYPE, date = $("#p-date").value, time = $("#p-time").value, hrs = parseFloat($("#p-hours").value);
     const loc = $("#p-loc").value.trim(), n = +$("#p-repeat").value || 1;
     if (!date || !time || !(hrs > 0)) { toast("Indiquez une date, une heure de début et une durée."); return; }
     const t = nowIso();
@@ -495,7 +556,7 @@ if (typeof document !== "undefined") (function () {
     }
     $("#p-repeat").value = "1";
     commit();
-    toast(n > 1 ? `${n} séances planifiées` : `Séance planifiée le ${dfFull.format(parseLocal(date + "T" + time))}`);
+    toast(n > 1 ? `${n} séances « ${title} » planifiées` : `${title} planifiée le ${dfFull.format(parseLocal(date + "T" + time))}`);
   });
 
   /* ---------- actions des listes (confirmation dans la page) ---------- */
@@ -579,7 +640,7 @@ if (typeof document !== "undefined") (function () {
   }
 
   // Les séances passées deviennent « à valider » : rafraîchir quand l'appli revient au premier plan.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { state = load(); if (!$("#e-note").value && $("#e-date").value < ymd(new Date())) $("#e-date").value = ymd(new Date()); render(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { state = load(); if ($("#e-date").value < ymd(new Date())) $("#e-date").value = ymd(new Date()); render(); } });
   window.addEventListener("storage", e => { if (e.key === LS) { state = load(); render(); } });
 
   save(); render();

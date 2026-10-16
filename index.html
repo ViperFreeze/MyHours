@@ -101,6 +101,15 @@ a{color:var(--accent)}
 .syncstate{font-size:13px;color:var(--muted)}
 .syncstate b{color:var(--ink)}
 
+/* Remise à zéro */
+.reset{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:14px;margin-top:4px;display:flex;flex-direction:column;gap:10px}
+.reset .rhint{font-size:13px;color:var(--muted);margin:0}
+.reset .rrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.reset .rrow .field{flex:1;min-width:180px}
+.dangerbtn{background:var(--surface);color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:42px}
+.dangerbtn[data-armed="1"]{background:var(--danger);color:var(--surface)}
+.dangerbtn:disabled{opacity:.45;cursor:default}
+
 /* Tabs */
 .tabs{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
 .tab{border:0;background:none;padding:9px 4px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer;color:var(--muted)}
@@ -206,7 +215,7 @@ svg .val{fill:var(--ink);font-weight:500}
       </div>
       <div class="head-btns">
         <button class="ghost" id="btn-sync" aria-expanded="false">Synchroniser<span class="dot" id="sync-dot" hidden></span></button>
-        <button class="ghost" id="btn-settings" aria-expanded="false">Objectif</button>
+        <button class="ghost" id="btn-settings" aria-expanded="false">Réglages</button>
       </div>
     </div>
 
@@ -217,7 +226,17 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="field full"><label for="s-default">Durée par défaut du bouton « 1 clic »</label>
         <select id="s-default"><option value="0.5">30 min</option><option value="1">1 h</option><option value="1.5">1 h 30</option><option value="2">2 h</option><option value="2.5">2 h 30</option><option value="3">3 h</option><option value="3.5">3 h 30</option><option value="4">4 h</option><option value="5">5 h</option><option value="6">6 h</option><option value="7">7 h</option><option value="8">8 h</option></select>
       </div>
-      <div class="row"><button type="button" class="ghost" id="s-cancel">Annuler</button><button class="primary" type="submit">Enregistrer</button></div>
+      <div class="row"><button type="button" class="ghost" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
+
+      <div class="reset">
+        <h2>Remettre les heures à zéro</h2>
+        <p class="rhint">Efface les heures réalisées, au choix toutes ou celles d'un mois. Les séances planifiées et l'objectif ne changent pas.</p>
+        <div class="rrow">
+          <div class="field"><label for="r-scope">Heures à effacer</label><select id="r-scope"></select></div>
+          <button type="button" class="dangerbtn" id="r-go" data-confirm="Confirmer la remise à zéro">Remettre à zéro</button>
+        </div>
+        <p class="rhint" id="r-hint"></p>
+      </div>
     </form>
 
     <div class="drawer" id="syncbox" hidden>
@@ -259,6 +278,7 @@ svg .val{fill:var(--ink);font-weight:500}
     <section class="box" id="quick" aria-labelledby="q-title">
       <div class="quick-head"><h2 id="q-title">Aujourd'hui</h2><span class="today-tot num" id="today-tot">Rien de saisi</span></div>
       <p class="hint" id="q-date">Un appui ajoute les heures faites aujourd'hui.</p>
+      <div class="chips" id="q-type" role="group" aria-label="Type d'activité"></div>
       <div class="qbtns" id="qbtns"></div>
       <button type="button" class="linkbtn" id="q-edit">Changer la durée par défaut</button>
     </section>
@@ -271,7 +291,9 @@ svg .val{fill:var(--ink);font-weight:500}
       </div>
       <div class="chips" data-for="e-hours"></div>
       <div class="field" id="e-time-f" hidden><label for="e-time">Heure de début (facultatif)</label><input id="e-time" type="time"></div>
-      <div class="field"><label for="e-note">Mission (facultatif)</label><input id="e-note" maxlength="120" placeholder="Ex. Distribution alimentaire"></div>
+      <div class="field"><label for="e-note">Type</label>
+        <select id="e-note"><option value="Prédic" selected>Prédic</option><option value="Étude">Étude</option><option value="Présentoir">Présentoir</option></select>
+      </div>
       <div class="kind" id="e-kind"></div>
       <button class="primary" type="submit" id="e-submit">Ajouter 2 h</button>
     </form>
@@ -286,7 +308,9 @@ svg .val{fill:var(--ink);font-weight:500}
     <form class="box" id="f-plan">
       <h2>Planifier une séance</h2>
       <p class="hint">Les séances prévues comptent comme « planifiées » jusqu'à ce que vous les validiez. Le bouton « Google Agenda » de chaque séance ouvre l'événement pré-rempli, à confirmer quand vous avez du réseau.</p>
-      <div class="field"><label for="p-title">Titre</label><input id="p-title" maxlength="120" required value="Bénévolat"></div>
+      <div class="field"><label for="p-title">Titre</label>
+        <select id="p-title"><option value="Prédic" selected>Prédic</option><option value="Étude">Étude</option><option value="Présentoir">Présentoir</option></select>
+      </div>
       <div class="three">
         <div class="field wide"><label for="p-date">Date</label><input id="p-date" type="date" required></div>
         <div class="field"><label for="p-time">Début</label><input id="p-time" type="time" required value="14:00"></div>

@@ -1,7 +1,6 @@
-# MyHours
 # MyHours — version hors ligne
 
-MyHours est une appli web installable (PWA) pour suivre vos heures de bénévolat. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
+MyHours est une appli web installable (PWA) pour suivre vos heures de prédication. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
 
 ## Contenu du dossier
 
@@ -34,17 +33,22 @@ Ouvrez l'adresse ci-dessus **avec du réseau**, puis :
 
 Ouvrez l'appli une fois depuis l'icône. Ensuite, elle fonctionne en mode avion.
 
-## 3. Synchroniser entre appareils
+## 3. Saisir ses heures
+
+- **Type d'activité** : chaque saisie ou séance est une **Prédic** (par défaut), une **Étude** ou un **Présentoir**. Dans « Aujourd'hui », touchez le type puis la durée ; le type choisi reste sélectionné pour les fois suivantes.
+- **Remettre à zéro** : bouton **Réglages** → *Remettre les heures à zéro*. Choisissez **Toutes les heures** ou un mois précis, puis touchez deux fois pour confirmer. Les séances planifiées et l'objectif ne changent pas. Un bouton **Annuler** apparaît quelques secondes en cas d'erreur.
+
+## 4. Synchroniser entre appareils
 
 Il n'y a pas de serveur : la synchronisation se fait à la main avec le bouton **Synchroniser**.
 
 1. Sur l'appareil A : **Exporter**, puis envoyez-vous le fichier (Drive, mail, messagerie…).
 2. Sur l'appareil B : **Importer** ce fichier.
-3. Les deux carnets sont fusionnés. Rien n'est écrasé, et les suppressions sont reportées. Si l'appareil B avait aussi des nouveautés, l'appli vous propose de refaire l'opération dans l'autre sens.
+3. Les deux carnets sont fusionnés. Rien n'est écrasé, et les suppressions sont reportées (y compris une remise à zéro). Si l'appareil B avait aussi des nouveautés, l'appli vous propose de refaire l'opération dans l'autre sens.
 
 Le point orange sur **Synchroniser** signale des modifications pas encore exportées.
 
-## 4. Modifier l'appli sans la réinstaller
+## 5. Modifier l'appli sans la réinstaller
 
 Inutile de désinstaller : l'appli se met à jour toute seule.
 
@@ -58,7 +62,7 @@ Vos heures sont conservées : elles ne sont pas stockées dans les fichiers de l
 
 ## À savoir
 
-- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet. Exportez de temps en temps : le fichier sert aussi de sauvegarde.
+- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet. Exportez de temps en temps : le fichier sert aussi de sauvegarde. Pensez à exporter avant une remise à zéro si vous voulez garder une trace.
 - **iPhone** : l'appli installée et Safari ont chacun leur propre stockage. Utilisez toujours l'icône de l'écran d'accueil.
 - **Google Agenda** : le bouton d'une séance ouvre Google Agenda avec l'événement pré-rempli, à confirmer. Il faut du réseau à ce moment-là. Si vous annulez une séance, retirez-la aussi de l'agenda vous-même.
 - **Tester sur ordinateur** : dans le dossier, lancez `python -m http.server 8000` puis ouvrez `http://localhost:8000`. En ouvrant `index.html` directement par double-clic, l'appli fonctionne mais le mode hors ligne n'est pas actif.
