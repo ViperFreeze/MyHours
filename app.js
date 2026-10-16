@@ -177,7 +177,7 @@ if (typeof document !== "undefined") (function () {
     if (c.needed != null && c.left > 0) pace.push(`<span>· il faut <b>${dur(c.needed)}</b> par semaine pour l'échéance</span>`);
     if (c.left > 0 && c.done + c.plannedH >= state.goal) pace.push(`<span>· vos séances planifiées suffisent à finir</span>`);
     $("#pace").innerHTML = pace.join(" ");
-    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderQuick(); renderReset(); updatePreview(); updateLogBtn();
+    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderSyncState(); renderCal(); renderDay(); renderReset(); updatePreview();
   }
   function renderCells(c) {
     const goal = state.goal;
@@ -454,7 +454,7 @@ if (typeof document !== "undefined") (function () {
     xmsg(txt, true);
   });
 
-  /* ---------- saisie en 1 clic (aujourd'hui) ---------- */
+  /* ---------- calendrier de saisie ---------- */
   function setDefaultSelect() {
     const sel = $("#s-default"), v = String(state.defaultHours);
     if (![...sel.options].some(o => o.value === v)) { const o = document.createElement("option"); o.value = v; o.textContent = dur(state.defaultHours); sel.appendChild(o); }
@@ -465,73 +465,139 @@ if (typeof document !== "undefined") (function () {
     for (const v of [1, 1.5, 2, 3]) { if (out.length >= 3) break; if (!out.includes(v)) out.push(v); }
     return out.sort((a, b) => a - b);
   }
-  let quickKey = "";
-  function renderQuick() {
-    const today = ymd(new Date());
-    const tot = sum(state.entries.filter(e => e.date === today), e => e.hours);
-    const tt2 = $("#today-tot");
-    tt2.textContent = tot ? `${dur(tot)} saisie${tot > 1 ? "s" : ""} aujourd'hui` : "Rien de saisi";
-    tt2.classList.toggle("has", tot > 0);
-    $("#q-date").textContent = `${cap(dfFull.format(new Date()))} · choisissez le type, puis un appui ajoute les heures faites aujourd'hui.`;
-    const vals = quickValues(), key = vals.join("|") + "/" + state.defaultHours;
-    if (key === quickKey) return;
-    quickKey = key;
-    $("#qbtns").innerHTML = vals.map(v => {
-      const main = v === state.defaultHours;
-      return `<button type="button" class="qbtn${main ? " main" : ""}" data-q="${v}" aria-label="Ajouter ${dur(v)} aujourd'hui${main ? " (durée par défaut)" : ""}">+${dur(v).replace(/ /g, " ")}${main ? "<small>par défaut</small>" : ""}</button>`;
-    }).join("");
-  }
-  $("#qbtns").addEventListener("click", ev => {
-    const b = ev.target.closest(".qbtn"); if (!b) return;
-    const hrs = parseFloat(b.dataset.q), t = nowIso(), id = uid();
-    state.entries.push({ id, date: ymd(new Date()), hours: hrs, note: curType, source: "rapide", created: t, updated: t });
-    commit();
-    const fresh = $(`#qbtns .qbtn[data-q="${hrs}"]`);
-    if (fresh) { fresh.classList.add("flash"); setTimeout(() => fresh.classList.remove("flash"), 700); }
-    if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
-    toast(`+${dur(hrs)} ${curType} aujourd'hui`, () => {
-      state.entries = state.entries.filter(e => e.id !== id); tomb(id);
-      commit(); toast("Saisie annulée");
-    });
-  });
-  $("#q-edit").addEventListener("click", () => { openDrawer("settings"); $("#s-default").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  const today = () => ymd(new Date());
+  const isFuture = date => date > today();
+  const short = h => { const t = Math.round(h * 60), H = Math.floor(t / 60), M = t % 60; return H ? (M ? `${H}h${pad(M)}` : `${H}h`) : `${M}m`; };
+  let sel = today();
+  let view = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
 
-  /* ---------- saisie avec date : réalisée si passée, prévision si à venir ---------- */
-  $("#e-date").value = ymd(new Date());
-  const isFuture = date => date > ymd(new Date());
-  function updateLogBtn() {
-    const v = parseFloat($("#e-hours").value), date = $("#e-date").value, fut = !!date && isFuture(date);
-    $("#e-time-f").hidden = !fut;
-    $("#e-kind").innerHTML = !date ? "" : fut
-      ? `<span class="chip warn">Prévision</span><span>Comptée en heures planifiées, à valider le ${esc(dfDM.format(parseYmd(date)))}.</span>`
-      : `<span class="chip ok">Réalisée</span><span>${date === ymd(new Date()) ? "Ajoutée aux heures faites aujourd'hui." : `Ajoutée aux heures faites le ${esc(dfDM.format(parseYmd(date)))}.`}</span>`;
-    const d = v > 0 ? dur(v) : "";
-    $("#e-submit").textContent = fut ? (d ? `Prévoir ${d}` : "Prévoir") : (d ? `Ajouter ${d}` : "Ajouter");
+  function byDay() {
+    const done = {}, plan = {};
+    state.entries.forEach(e => { done[e.date] = (done[e.date] || 0) + e.hours; });
+    state.planned.forEach(p => { const k = p.start.slice(0, 10); plan[k] = (plan[k] || 0) + p.hours; });
+    return { done, plan };
   }
-  ["#e-hours", "#e-date"].forEach(s => { $(s).addEventListener("input", updateLogBtn); $(s).addEventListener("change", updateLogBtn); });
-  $("#f-log").addEventListener("submit", ev => {
-    ev.preventDefault();
-    const hrs = parseFloat($("#e-hours").value), date = $("#e-date").value;
-    if (!(hrs > 0) || !date) { toast("Indiquez une date et une durée."); return; }
-    const t = nowIso(), id = uid(), h = Math.round(hrs * 100) / 100, type = $("#e-note").value || DEFAULT_TYPE;
+  function renderCal() {
+    const { done, plan } = byDay();
+    const y = view.getFullYear(), m = view.getMonth(), t = today();
+    $("#cal-month").textContent = dfMonth.format(view);
+    const key = `${y}-${pad(m + 1)}`;
+    const mDone = sum(Object.entries(done).filter(([k]) => k.startsWith(key)), ([, v]) => v);
+    const mPlan = sum(Object.entries(plan).filter(([k]) => k.startsWith(key)), ([, v]) => v);
+    $("#cal-sum").textContent = (mDone || mPlan) ? [mDone ? `${num(mDone)} h réalisées` : "", mPlan ? `${num(mPlan)} h prévues` : ""].filter(Boolean).join(" · ") : "Aucune heure ce mois-ci";
+    const first = new Date(y, m, 1), lead = (first.getDay() + 6) % 7;
+    const days = new Date(y, m + 1, 0).getDate();
+    const cells = Math.ceil((lead + days) / 7) * 7;
+    let html = "";
+    for (let i = 0; i < cells; i++) {
+      const d = new Date(y, m, 1 - lead + i), k = ymd(d), out = d.getMonth() !== m;
+      const dh = done[k] || 0, ph = plan[k] || 0;
+      const lvl = dh ? (dh < 2 ? "l1" : dh < 4 ? "l2" : "l3") : "";
+      const cls = ["cd", out && "out", lvl, ph && "plan", k === t && "today", k === sel && "sel"].filter(Boolean).join(" ");
+      const label = `${cap(dfFull.format(d))}${dh ? `, ${dur(dh)} réalisées` : ""}${ph ? `, ${dur(ph)} prévues` : ""}`;
+      html += `<button type="button" class="${cls}" data-d="${k}" aria-label="${esc(label)}" aria-pressed="${k === sel}"><span class="n">${d.getDate()}</span><span class="h">${dh ? short(dh) : ph ? short(ph) : ""}</span></button>`;
+    }
+    $("#cal-grid").innerHTML = html;
+    const tm = new Date(); $("#cal-today").hidden = sel === t && view.getFullYear() === tm.getFullYear() && view.getMonth() === tm.getMonth();
+  }
+  function dayName(k) {
+    const t = parseYmd(today()), d = parseYmd(k), diff = Math.round((d - t) / DAY);
+    return diff === 0 ? "Aujourd'hui" : diff === -1 ? "Hier" : diff === 1 ? "Demain" : cap(dfFull.format(d));
+  }
+  let quickKey = "";
+  function renderDay() {
+    const k = sel, fut = isFuture(k), now = new Date(), name = dayName(k);
+    $("#day-title").textContent = name;
+    $("#day-sub").textContent = /^(Aujourd'hui|Hier|Demain)$/.test(name) ? dfFull.format(parseYmd(k)) : "";
+    const kind = $("#day-kind");
+    kind.className = "chip " + (fut ? "warn" : "ok"); kind.textContent = fut ? "Prévision" : "Réalisée";
+    const ents = state.entries.filter(e => e.date === k);
+    const plans = state.planned.filter(p => p.start.slice(0, 10) === k).sort((a, b) => a.start.localeCompare(b.start));
+    let html = ents.map(e => `<div class="drow" data-eid="${esc(e.id)}"><span class="dot"></span>
+      <div class="w"><b>${dur(e.hours)}</b><span>${esc(e.note || DEFAULT_TYPE)}</span></div>
+      <div class="acts"><button class="sbtn del" data-act="del-entry" data-confirm="Confirmer">Supprimer</button></div></div>`).join("");
+    html += plans.map(p => {
+      const ended = endOf(p) <= now;
+      return `<div class="drow p" data-id="${esc(p.id)}"><span class="dot"></span>
+      <div class="w"><b>${dur(p.hours)}</b><span>${esc(p.title)} · ${timeLabel(p)}${ended ? " · à valider" : ""}</span></div>
+      <div class="acts">${ended
+        ? `<input class="mini num" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" value="${p.hours}" aria-label="Heures faites"><button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button>`
+        : `<a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener">Agenda</a><button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Retirer</button>`}</div></div>`;
+    }).join("");
+    $("#day-list").innerHTML = html;
+    const tot = sum(ents, e => e.hours), ptot = sum(plans, p => p.hours);
+    $("#day-hint").textContent = fut
+      ? (ptot ? `${dur(ptot)} prévues ce jour-là. Choisissez le type, puis un appui ajoute une prévision.` : "Choisissez le type, puis un appui ajoute une prévision pour ce jour-là.")
+      : (tot ? `${dur(tot)} réalisées ce jour-là. Choisissez le type, puis un appui en ajoute.` : `Choisissez le type, puis un appui ajoute les heures faites ${k === today() ? "aujourd'hui" : "ce jour-là"}.`);
+    $("#d-time-f").hidden = !fut;
+    const v = parseFloat($("#d-hours").value);
+    $("#d-submit").textContent = `${fut ? "Prévoir" : "Ajouter"} ${v > 0 ? dur(v) : ""}`.trim();
+    const vals = quickValues(), qk = vals.join("|") + "/" + state.defaultHours + "/" + fut;
+    if (qk !== quickKey) {
+      quickKey = qk;
+      $("#qbtns").innerHTML = vals.map(v => {
+        const main = v === state.defaultHours;
+        return `<button type="button" class="qbtn${main ? " main" : ""}" data-q="${v}">+${dur(v).replace(/ /g, " ")}<small>${main ? "par défaut" : fut ? "prévision" : " "}</small></button>`;
+      }).join("");
+    }
+    $("#qbtns").querySelectorAll(".qbtn").forEach(b => b.setAttribute("aria-label", `${fut ? "Prévoir" : "Ajouter"} ${dur(+b.dataset.q)} le ${dfFull.format(parseYmd(k))}`));
+  }
+
+  function addOn(date, hrs, type, time) {
+    const t = nowIso(), id = uid(), h = Math.round(hrs * 100) / 100;
+    type = type || DEFAULT_TYPE;
+    const when = date === today() ? "aujourd'hui" : date === ymd(new Date(Date.now() + DAY)) ? "demain" : "le " + dfDM.format(parseYmd(date));
     let msg;
     if (isFuture(date)) {
-      const time = $("#e-time").value;
       state.planned.push({ id, title: type, start: `${date}T${time || "00:00"}:00`, allDay: !time, hours: h, location: "", created: t, updated: t });
-      msg = `${dur(h)} ${type} prévues le ${dfDM.format(parseYmd(date))}`;
+      msg = `${dur(h)} ${type} prévues ${when}`;
     } else {
-      state.entries.push({ id, date, hours: h, note: type, source: "manuel", created: t, updated: t });
-      msg = `${dur(h)} ${type} ajoutées le ${dfDM.format(parseYmd(date))}`;
+      state.entries.push({ id, date, hours: h, note: type, source: "calendrier", created: t, updated: t });
+      msg = `+${dur(h)} ${type} ${when}`;
     }
-    $("#e-time").value = "";
-    $("#e-date").value = ymd(new Date());
     commit();
+    if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
     toast(msg, () => {
       state.entries = state.entries.filter(e => e.id !== id);
       state.planned = state.planned.filter(p => p.id !== id); tomb(id);
       commit(); toast("Saisie annulée");
     });
+  }
+
+  $("#cal-grid").addEventListener("click", ev => {
+    const c = ev.target.closest(".cd"); if (!c) return;
+    sel = c.dataset.d;
+    const d = parseYmd(sel);
+    if (d.getMonth() !== view.getMonth()) view = new Date(d.getFullYear(), d.getMonth(), 1);
+    renderCal(); renderDay();
   });
+  function shiftMonth(n) { view = new Date(view.getFullYear(), view.getMonth() + n, 1); renderCal(); }
+  $("#cal-prev").addEventListener("click", () => shiftMonth(-1));
+  $("#cal-next").addEventListener("click", () => shiftMonth(1));
+  $("#cal-today").addEventListener("click", () => { sel = today(); const d = new Date(); view = new Date(d.getFullYear(), d.getMonth(), 1); renderCal(); renderDay(); });
+  let tx = null, ty = null;
+  $("#cal-grid").addEventListener("touchstart", e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  $("#cal-grid").addEventListener("touchend", e => {
+    if (tx == null) return;
+    const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftMonth(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
+  $("#qbtns").addEventListener("click", ev => {
+    const b = ev.target.closest(".qbtn"); if (!b) return;
+    addOn(sel, parseFloat(b.dataset.q), curType, "");
+    const fresh = $(`#qbtns .qbtn[data-q="${b.dataset.q}"]`);
+    if (fresh) { fresh.classList.add("flash"); setTimeout(() => fresh.classList.remove("flash"), 700); }
+  });
+  $("#d-hours").addEventListener("input", renderDay);
+  $("#f-day").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const hrs = parseFloat($("#d-hours").value);
+    if (!(hrs > 0)) { toast("Indiquez une durée."); return; }
+    addOn(sel, hrs, $("#d-note").value, isFuture(sel) ? $("#d-time").value : "");
+    $("#d-time").value = ""; $("#day-more").open = false;
+  });
+  $("#q-edit").addEventListener("click", () => { openDrawer("settings"); $("#s-default").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 
   /* ---------- planification ---------- */
   $("#p-date").value = ymd(new Date(Date.now() + DAY));
@@ -640,7 +706,14 @@ if (typeof document !== "undefined") (function () {
   }
 
   // Les séances passées deviennent « à valider » : rafraîchir quand l'appli revient au premier plan.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { state = load(); if ($("#e-date").value < ymd(new Date())) $("#e-date").value = ymd(new Date()); render(); } });
+  let lastDay = ymd(new Date());
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    state = load();
+    const t = ymd(new Date());
+    if (t !== lastDay) { if (sel === lastDay) { sel = t; const d = new Date(); view = new Date(d.getFullYear(), d.getMonth(), 1); } lastDay = t; }
+    render();
+  });
   window.addEventListener("storage", e => { if (e.key === LS) { state = load(); render(); } });
 
   save(); render();

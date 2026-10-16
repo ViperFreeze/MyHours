@@ -191,7 +191,53 @@ svg .val{fill:var(--ink);font-weight:500}
 .qbtn.flash{box-shadow:0 0 0 3px var(--ok-soft);border-color:var(--ok)}
 @media (prefers-reduced-motion:reduce){.qbtn:active{transform:none}}
 .linkbtn{align-self:flex-start;background:none;border:0;padding:0;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;margin-top:-4px}
-.kind{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
+/* Calendar */
+.cal{gap:12px}
+.cal-head{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:8px}
+.cal-title{text-align:center;display:flex;flex-direction:column;gap:1px;min-width:0}
+.cal-title h2::first-letter{text-transform:uppercase}
+.cal-sum{font-size:12px;color:var(--muted)}
+.navbtn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:24px;line-height:1;cursor:pointer;display:grid;place-items:center;padding-bottom:3px}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;touch-action:pan-y}
+.cd{position:relative;aspect-ratio:1/1.08;max-width:100%;min-width:0;border-radius:9px;border:1px solid transparent;background:var(--sunk);color:var(--ink);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px;font-variant-numeric:tabular-nums;touch-action:manipulation}
+.cd .n{font-size:14px;font-weight:600;line-height:1.1}
+.cd .h{font-family:var(--f-mono);font-size:10px;line-height:1.1;font-weight:500;min-height:11px}
+.cd.out{opacity:.38}
+.cd.l1{background:color-mix(in srgb,var(--accent) 22%,var(--surface))}
+.cd.l2{background:color-mix(in srgb,var(--accent) 48%,var(--surface))}
+.cd.l3{background:var(--accent);color:var(--accent-ink)}
+.cd.plan:not(.l1):not(.l2):not(.l3){background:var(--plan-soft)}
+.cd.plan::after{content:"";position:absolute;left:22%;right:22%;bottom:4px;height:3px;border-radius:2px;background:var(--plan)}
+.cd.plan:not(.l1):not(.l2):not(.l3) .h{color:var(--plan)}
+.cd.today::before{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--danger)}
+.cd.today .n{font-weight:800}
+.cd.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.cal-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.cal-foot .legend i.p{background:var(--plan);border-color:var(--plan)}
+.cal-foot .legend i.t{background:var(--danger);border-color:var(--danger);border-radius:50%;width:8px;height:8px;vertical-align:0}
+
+/* Selected day */
+.day-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.day-head h2::first-letter{text-transform:uppercase}
+.day-sub{font-size:13px;color:var(--muted)}
+.day-sub::first-letter{text-transform:uppercase}
+.dlist{display:flex;flex-direction:column;gap:6px}
+.dlist:empty{display:none}
+.drow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sunk);border-radius:10px;padding:8px 10px}
+.drow .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.drow.p .dot{background:var(--plan)}
+.drow .w{flex:1;min-width:0;font-size:14px}
+.drow .w b{font-family:var(--f-display);font-weight:700;font-stretch:85%;font-size:16px;margin-right:6px;white-space:nowrap}
+.drow .w span{color:var(--muted);overflow-wrap:anywhere}
+.drow .acts{grid-column:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.more{border-top:1px dashed var(--line);padding-top:10px}
+.more summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more summary::before{content:"+ "}
+.more[open] summary::before{content:"− "}
+.more-body{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 
 .status{font-size:12px;color:var(--muted);text-align:center}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100% - 32px);width:max-content;z-index:20;opacity:0;pointer-events:none;transition:opacity .2s;display:flex;gap:14px;align-items:center}
@@ -275,28 +321,43 @@ svg .val{fill:var(--ink);font-weight:500}
   </nav>
 
   <section class="panel" id="p-log" role="tabpanel" aria-labelledby="t-log">
-    <section class="box" id="quick" aria-labelledby="q-title">
-      <div class="quick-head"><h2 id="q-title">Aujourd'hui</h2><span class="today-tot num" id="today-tot">Rien de saisi</span></div>
-      <p class="hint" id="q-date">Un appui ajoute les heures faites aujourd'hui.</p>
+    <section class="box cal" aria-labelledby="cal-month">
+      <div class="cal-head">
+        <button type="button" class="navbtn" id="cal-prev" aria-label="Mois précédent">&#8249;</button>
+        <div class="cal-title"><h2 id="cal-month">Octobre 2026</h2><span class="cal-sum num" id="cal-sum"></span></div>
+        <button type="button" class="navbtn" id="cal-next" aria-label="Mois suivant">&#8250;</button>
+      </div>
+      <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-foot">
+        <div class="legend"><span><i class="d"></i>Réalisées</span><span><i class="p"></i>Prévues</span><span><i class="t"></i>Aujourd'hui</span></div>
+        <button type="button" class="linkbtn" id="cal-today" hidden>Revenir à aujourd'hui</button>
+      </div>
+    </section>
+
+    <section class="box day" id="day" aria-labelledby="day-title" aria-live="polite">
+      <div class="day-head">
+        <div><h2 id="day-title">Aujourd'hui</h2><span class="day-sub" id="day-sub"></span></div>
+        <span class="chip ok" id="day-kind">Réalisée</span>
+      </div>
+      <div class="dlist" id="day-list"></div>
+      <p class="hint" id="day-hint"></p>
       <div class="chips" id="q-type" role="group" aria-label="Type d'activité"></div>
       <div class="qbtns" id="qbtns"></div>
+      <details class="more" id="day-more">
+        <summary>Autre durée ou heure</summary>
+        <form id="f-day" class="more-body">
+          <div class="two">
+            <div class="field"><label for="d-hours">Durée (heures)</label><input id="d-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
+            <div class="field" id="d-time-f"><label for="d-time">Heure de début (facultatif)</label><input id="d-time" type="time"></div>
+          </div>
+          <div class="chips" data-for="d-hours"></div>
+          <div class="field"><label for="d-note">Type</label><select id="d-note"><option value="Prédic" selected>Prédic</option><option value="Étude">Étude</option><option value="Présentoir">Présentoir</option></select></div>
+          <button class="primary" type="submit" id="d-submit">Ajouter 2 h</button>
+        </form>
+      </details>
       <button type="button" class="linkbtn" id="q-edit">Changer la durée par défaut</button>
     </section>
-    <form class="box" id="f-log">
-      <h2>Autre durée ou autre date</h2>
-      <p class="hint">Date passée ou aujourd'hui : les heures comptent comme réalisées. Date à venir : elles sont enregistrées en prévision.</p>
-      <div class="two">
-        <div class="field"><label for="e-date">Date</label><input id="e-date" type="date" required></div>
-        <div class="field"><label for="e-hours">Durée (heures)</label><input id="e-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
-      </div>
-      <div class="chips" data-for="e-hours"></div>
-      <div class="field" id="e-time-f" hidden><label for="e-time">Heure de début (facultatif)</label><input id="e-time" type="time"></div>
-      <div class="field"><label for="e-note">Type</label>
-        <select id="e-note"><option value="Prédic" selected>Prédic</option><option value="Étude">Étude</option><option value="Présentoir">Présentoir</option></select>
-      </div>
-      <div class="kind" id="e-kind"></div>
-      <button class="primary" type="submit" id="e-submit">Ajouter 2 h</button>
-    </form>
     <div class="box" id="todo-box" hidden>
       <h2>Séances passées à valider</h2>
       <p class="hint">Ces séances planifiées sont terminées. Validez-les pour les compter.</p>

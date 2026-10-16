@@ -35,7 +35,9 @@ Ouvrez l'appli une fois depuis l'icône. Ensuite, elle fonctionne en mode avion.
 
 ## 3. Saisir ses heures
 
-- **Type d'activité** : chaque saisie ou séance est une **Prédic** (par défaut), une **Étude** ou un **Présentoir**. Dans « Aujourd'hui », touchez le type puis la durée ; le type choisi reste sélectionné pour les fois suivantes.
+- **Calendrier** : l'onglet **Saisir** affiche le mois. Plus une case est bleue, plus vous avez fait d'heures ce jour-là ; les jours prévus sont en orange, et un point rouge marque aujourd'hui. Changez de mois avec les flèches ou en glissant le doigt.
+- **Ajouter des heures** : touchez un jour, choisissez le type, puis **+1 h**, **+1 h 30** ou **+2 h**. Un jour passé ou aujourd'hui compte en heures réalisées ; un jour à venir crée une prévision. « Autre durée ou heure » permet une durée précise ou une heure de début.
+- **Type d'activité** : chaque saisie ou séance est une **Prédic** (par défaut), une **Étude** ou un **Présentoir**. Le type choisi reste sélectionné pour les fois suivantes.
 - **Remettre à zéro** : bouton **Réglages** → *Remettre les heures à zéro*. Choisissez **Toutes les heures** ou un mois précis, puis touchez deux fois pour confirmer. Les séances planifiées et l'objectif ne changent pas. Un bouton **Annuler** apparaît quelques secondes en cas d'erreur.
 
 ## 4. Synchroniser entre appareils
