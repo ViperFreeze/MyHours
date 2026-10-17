@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MyHours</title>
+<meta name="description" content="MyHours : suivi des heures de prédication, utilisable hors ligne.">
+<meta name="theme-color" content="#ECEFF3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E141A" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MyHours">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+/* Thème choisi (auto / clair / sombre) appliqué avant l'affichage : pas de flash blanc en mode sombre. */
+(function () {
+  var t = "auto"; try { t = localStorage.getItem("myhours-theme") || "auto"; } catch (e) {}
+  if (t === "light" || t === "dark") {
+    document.documentElement.setAttribute("data-theme", t);
+    var c = t === "dark" ? "#0E141A" : "#ECEFF3";
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.setAttribute("content", c); });
+  }
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one mobile-first column; the monthly time card leads, tabs below for log (calendar) / plan / stats / history. */
+:root{
+  --bg:#ECEFF3; --surface:#FFFFFF; --sunk:#F4F6F9; --ink:#131C25; --muted:#56636F; --line:#D3D9E1;
+  --accent:#2445D6; --accent-ink:#FFFFFF; --accent-soft:#E2E8FB;
+  --plan:#D98A12; --plan-soft:#FBEFD9;
+  --ok:#1D7A4C; --ok-soft:#DCF1E6; --warn:#B4520F; --warn-soft:#FBE7D6; --danger:#BE3227;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E141A; --surface:#161E27; --sunk:#111821; --ink:#E5EBF1; --muted:#93A0AD; --line:#2A3540;
+    --accent:#7F9BFF; --accent-ink:#0B1020; --accent-soft:#1C2848;
+    --plan:#F0AE4A; --plan-soft:#33281A;
+    --ok:#5CCB92; --ok-soft:#173326; --warn:#F09A5B; --warn-soft:#3A2617; --danger:#FF7B70;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E141A; --surface:#161E27; --sunk:#111821; --ink:#E5EBF1; --muted:#93A0AD; --line:#2A3540;
+  --accent:#7F9BFF; --accent-ink:#0B1020; --accent-soft:#1C2848;
+  --plan:#F0AE4A; --plan-soft:#33281A;
+  --ok:#5CCB92; --ok-soft:#173326; --warn:#F09A5B; --warn-soft:#3A2617; --danger:#FF7B70;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:calc(20px + env(safe-area-inset-top,0px));padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
+[hidden]{display:none!important}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.label{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ico{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Brand: the provided stopwatch mark, tinted through the theme tokens */
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.brand .mark{width:30px;height:23px;flex:none;background:var(--ink);-webkit-mask:url(icons/logo-mark.png) center/contain no-repeat;mask:url(icons/logo-mark.png) center/contain no-repeat}
+.brand .word{font-family:var(--f-display);font-weight:700;font-stretch:115%;font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+
+/* Banners */
+.banner{display:flex;gap:12px;align-items:center;justify-content:space-between;background:var(--accent-soft);color:var(--ink);border-radius:12px;padding:10px 14px;font-size:14px}
+.banner.off{background:var(--warn-soft);color:var(--warn)}
+.banner .ghost{flex:none}
+
+/* Time card */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:16px}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.card-head > div:first-child{min-width:0}
+.card-head .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.card-head .sub::first-letter{text-transform:uppercase}
+.head-btns{display:flex;gap:6px;flex:none}
+.ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:none;border:1px solid var(--line);border-radius:8px;padding:0 10px;height:34px;font-size:13px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;position:relative}
+.ghost:hover{border-color:var(--muted)}
+.ghost[aria-expanded="true"]{background:var(--sunk);border-color:var(--muted)}
+.ghost:disabled{opacity:.55;cursor:default}
+.ghost.icon{width:34px;padding:0}
+@media (max-width:420px){.head-btns .ghost .txt{display:none}.head-btns .ghost{width:34px;padding:0}}
+.big{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.big .done{font-family:var(--f-display);font-stretch:70%;font-weight:800;font-size:64px;line-height:.9;letter-spacing:-.01em}
+.big .of{font-family:var(--f-display);font-stretch:75%;font-weight:600;font-size:26px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.info{background:var(--accent-soft);color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(22px,1fr));gap:4px}
+.cell{position:relative;height:26px;border-radius:4px;background:var(--sunk);border:1px solid var(--line);overflow:hidden}
+.cell .d{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.cell .p{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,var(--plan) 0 3px,transparent 3px 6px);opacity:.9}
+.scale{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:11px;color:var(--muted);margin-top:-8px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px;border:1px solid var(--line);background:var(--sunk)}
+.legend i.d{background:var(--accent);border-color:var(--accent)}
+.legend i.p{background:repeating-linear-gradient(135deg,var(--plan) 0 2px,transparent 2px 4px);border-color:var(--plan)}
+.figs{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.fig{background:var(--surface);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.fig b{font-family:var(--f-display);font-stretch:80%;font-size:24px;font-weight:700;line-height:1.1}
+.fig.d b{color:var(--accent)} .fig.p b{color:var(--plan)}
+
+/* Réglages */
+.drawer{border-top:1px dashed var(--line);padding-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.drawer .full{grid-column:1/-1}
+.drawer .row{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.drawer h2{font-size:17px;font-stretch:90%;font-weight:700}
+.set-sum{grid-column:1/-1;margin:-4px 0 0;font-size:13px;color:var(--muted)}
+.sect{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:14px;margin-top:4px;display:flex;flex-direction:column;gap:10px}
+.sect .rhint{font-size:13px;color:var(--muted);margin:0}
+.sect .rrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.sect .rrow .field{flex:1;min-width:180px}
+.dangerbtn{background:var(--surface);color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:42px}
+.dangerbtn[data-armed="1"]{background:var(--danger);color:var(--surface)}
+.dangerbtn:disabled{opacity:.45;cursor:default}
+
+/* Tabs */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.tab{border:0;background:none;padding:9px 4px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+.panel{display:flex;flex-direction:column;gap:16px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.box h2{font-size:18px;font-stretch:90%;font-weight:700}
+.box .hint{color:var(--muted);font-size:13px;margin-top:-8px}
+
+/* Forms */
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label,.field .flabel{font-size:13px;font-weight:600}
+.field input,.field select{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);min-height:42px}
+.field input:focus,.field select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px}
+@media (max-width:440px){.three{grid-template-columns:1fr 1fr}.three .wide{grid-column:1/-1}}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.dchip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 11px;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+.dchip[aria-pressed="true"],.dchip[aria-checked="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.primary{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:12px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:46px}
+.secondary{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:46px}
+.secondary:disabled{opacity:.55;cursor:default}
+.preview{font-size:13px;color:var(--muted);background:var(--plan-soft);border-radius:8px;padding:9px 12px}
+.preview b{color:var(--ink)}
+.msg{font-size:13px;border-radius:8px;padding:9px 12px;background:var(--warn-soft);color:var(--warn);margin:0}
+.msg.okm{background:var(--ok-soft);color:var(--ok)}
+
+/* Lists */
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:62px 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.date{font-family:var(--f-mono);font-size:12px;line-height:1.25;color:var(--muted);text-transform:uppercase}
+.date b{display:block;font-family:var(--f-display);font-stretch:75%;font-size:22px;font-weight:700;color:var(--ink);line-height:1}
+.what{min-width:0}
+.what .t{font-weight:600;overflow-wrap:anywhere}
+.what .s{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dur{font-family:var(--f-mono);font-weight:500;font-size:14px;text-align:right;white-space:nowrap}
+.acts{grid-column:2/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 11px;border:1px solid var(--line);background:var(--surface);border-radius:7px;font-size:13px;font-weight:600;line-height:1;cursor:pointer;text-decoration:none;color:var(--ink);white-space:nowrap}
+.sbtn .ico{width:14px;height:14px}
+.sbtn.go{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.sbtn.cal{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+.sbtn.del{color:var(--danger)}
+.sbtn[data-armed="1"]{background:var(--danger);border-color:var(--danger);color:var(--surface)}
+.mini{width:70px;height:32px;padding:0 7px;border:1px solid var(--line);border-radius:7px;background:var(--sunk);font-size:13px}
+.month{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:14px 0 4px;display:flex;justify-content:space-between}
+.month:first-child{padding-top:0}
+.empty{color:var(--muted);font-size:14px;padding:6px 0;margin:0}
+.empty b{color:var(--ink)}
+
+/* Stats */
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kpi{background:var(--sunk);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi b{font-family:var(--f-display);font-stretch:80%;font-size:26px;font-weight:700;line-height:1.1}
+.kpi span{font-size:12px;color:var(--muted)}
+.chartwrap{overflow-x:auto}
+svg text{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+svg .bar{fill:var(--accent)} svg .bar.cur{opacity:.55}
+svg .grid-l{stroke:var(--line);stroke-width:1}
+svg .pace-l{stroke:var(--plan);stroke-width:2;stroke-dasharray:5 4}
+svg .val{fill:var(--ink);font-weight:500}
+.wd{display:grid;grid-template-columns:28px 1fr 54px;gap:8px;align-items:center;font-size:13px}
+.wd .tr{height:10px;background:var(--sunk);border-radius:5px;overflow:hidden}
+.wd .tr span{display:block;height:100%;background:var(--accent);border-radius:5px}
+.wd .v{font-family:var(--f-mono);font-size:12px;color:var(--muted);text-align:right}
+
+/* Quick add */
+.quick-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.today-tot{font-size:13px;font-weight:600;color:var(--muted)}
+.today-tot.has{color:var(--plan)}
+.qbtns{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:10px}
+.qbtn{border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:12px;padding:12px 6px;min-height:76px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-family:var(--f-display);font-weight:700;font-stretch:75%;font-size:23px;line-height:1.05;white-space:nowrap;font-variant-numeric:tabular-nums;touch-action:manipulation}
+.qbtn small{font-family:var(--f-body);font-stretch:100%;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+/* Premier appui : le bouton demande confirmation, le second ajoute. */
+.qbtn[data-armed="1"]{box-shadow:0 0 0 3px var(--accent-soft);border-color:var(--accent)}
+.qbtn[data-armed="1"] small{color:inherit;opacity:1}
+.qbtn:active{transform:scale(.97)}
+.qbtn.flash{box-shadow:0 0 0 3px var(--ok-soft);border-color:var(--ok)}
+@media (prefers-reduced-motion:reduce){.qbtn:active{transform:none}}
+.linkbtn{align-self:flex-start;background:none;border:0;padding:0;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;margin-top:-4px}
+
+/* Calendar */
+.cal{gap:12px}
+.cal-head{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:8px}
+.cal-title{text-align:center;display:flex;flex-direction:column;gap:1px;min-width:0}
+.cal-title h2::first-letter{text-transform:uppercase}
+.cal-sum{font-size:12px;color:var(--muted)}
+.navbtn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:24px;line-height:1;cursor:pointer;display:grid;place-items:center;padding-bottom:3px}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:center}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;touch-action:pan-y}
+.cd{position:relative;aspect-ratio:1/1.08;max-width:100%;min-width:0;border-radius:9px;border:1px solid transparent;background:var(--sunk);color:var(--ink);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px;font-variant-numeric:tabular-nums;touch-action:manipulation}
+.cd .n{font-size:14px;font-weight:600;line-height:1.1}
+.cd .h{font-family:var(--f-mono);font-size:10px;line-height:1.1;font-weight:500;min-height:11px}
+.cd.out{opacity:.38}
+.cd.l1{background:color-mix(in srgb,var(--accent) 22%,var(--surface))}
+.cd.l2{background:color-mix(in srgb,var(--accent) 48%,var(--surface))}
+.cd.l3{background:var(--accent);color:var(--accent-ink)}
+.cd.plan:not(.l1):not(.l2):not(.l3){background:var(--plan-soft)}
+.cd.plan::after{content:"";position:absolute;left:22%;right:22%;bottom:4px;height:3px;border-radius:2px;background:var(--plan)}
+.cd.plan:not(.l1):not(.l2):not(.l3) .h{color:var(--plan)}
+.cd.today::before{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--danger)}
+.cd.today .n{font-weight:800}
+.cd.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.cal-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.cal-foot .legend i.p{background:var(--plan);border-color:var(--plan)}
+.cal-foot .legend i.t{background:var(--danger);border-color:var(--danger);border-radius:50%;width:8px;height:8px;vertical-align:0}
+
+/* Selected day */
+.day-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.day-head h2::first-letter{text-transform:uppercase}
+.day-sub{font-size:13px;color:var(--muted)}
+.day-sub::first-letter{text-transform:uppercase}
+.dlist{display:flex;flex-direction:column;gap:6px}
+.dlist:empty{display:none}
+.drow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sunk);border-radius:10px;padding:8px 10px}
+.drow .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.drow.p .dot{background:var(--plan)}
+.drow .w{flex:1;min-width:0;font-size:14px}
+.drow .w b{font-family:var(--f-display);font-weight:700;font-stretch:85%;font-size:16px;margin-right:6px;white-space:nowrap}
+.drow .w span{color:var(--muted);overflow-wrap:anywhere}
+.drow .acts{grid-column:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.more{border-top:1px dashed var(--line);padding-top:10px}
+.more summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more summary::before{content:"+ "}
+.more[open] summary::before{content:"− "}
+.more-body{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+
+.status{font-size:12px;color:var(--muted);text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100% - 32px);width:max-content;z-index:20;opacity:0;pointer-events:none;transition:opacity .2s;display:flex;gap:14px;align-items:center}
+.toast.on{opacity:1;pointer-events:auto}
+.toast button{background:none;border:0;padding:4px 0;color:var(--bg);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner off" id="offline" hidden>Hors ligne. Vos saisies sont enregistrées sur cet appareil.</div>
+  <div class="banner" id="update" hidden><span>Une nouvelle version de MyHours est prête. Vos données sont conservées.</span><button class="ghost" id="update-btn">Mettre à jour</button></div>
+  <div class="banner" id="install" hidden><span id="install-text">Installez l'appli pour l'ouvrir depuis l'écran d'accueil, même sans réseau.</span><button class="ghost" id="install-btn">Installer</button></div>
+
+  <section class="card" aria-label="Objectif du mois">
+    <div class="card-head">
+      <div>
+        <div class="brand"><span class="mark" aria-hidden="true"></span><span class="word">MyHours</span></div>
+        <div class="sub" id="h-sub">Objectif 30 h par mois</div>
+      </div>
+      <div class="head-btns">
+        <button class="ghost icon" id="btn-theme" type="button" aria-label="Thème : automatique" title="Thème : automatique"></button>
+        <button class="ghost" id="gcal-sync" type="button" aria-label="Envoyer vers Google Agenda" title="Envoyer vers Google Agenda">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg><span class="txt">Agenda</span>
+        </button>
+        <button class="ghost" id="btn-settings" type="button" aria-expanded="false" aria-controls="settings" aria-label="Réglages" title="Réglages">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="txt">Réglages</span>
+        </button>
+      </div>
+    </div>
+
+    <form class="drawer" id="settings" novalidate hidden>
+      <div class="field full"><label for="s-goal">Heures visées par mois</label><input id="s-goal" type="number" min="1" max="2000" step="0.5" inputmode="decimal"></div>
+      <p class="set-sum" id="s-sum" aria-live="polite"></p>
+      <p class="msg full" id="s-err" hidden></p>
+      <div class="field full"><span class="flabel" id="s-default-l">Durée par défaut des boutons rapides</span>
+        <div class="chips" id="s-default-chips" role="radiogroup" aria-labelledby="s-default-l"></div>
+      </div>
+      <div class="field full"><label for="s-name">Nom affiché dans l'agenda (facultatif)</label><input id="s-name" maxlength="80" placeholder="Mon engagement"></div>
+      <div class="field full"><label for="s-gcid">ID client Google (pour l'envoi vers l'agenda et la sauvegarde Drive)</label><input id="s-gcid" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></div>
+      <div class="row"><button type="button" class="secondary" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
+
+      <div class="sect">
+        <h2>Sauvegarde Google Drive</h2>
+        <p class="rhint">Une copie de toutes vos données est gardée dans un dossier caché de votre Google Drive. « Restaurer » remplace les données de cet appareil par cette copie (nouveau téléphone, réinstallation…).</p>
+        <div class="rrow">
+          <button type="button" class="secondary" id="b-save">Sauvegarder maintenant</button>
+          <button type="button" class="dangerbtn" id="b-restore" data-confirm="Confirmer : remplacer les données">Restaurer depuis Google Drive</button>
+        </div>
+        <p class="rhint" id="b-hint"></p>
+      </div>
+
+      <div class="sect">
+        <h2>Fichier de sauvegarde</h2>
+        <p class="rhint">Sans compte Google : « Exporter » crée un fichier à vous envoyer (Drive, mail, messagerie…). « Importer » le fusionne sur un autre appareil : rien n'est écrasé, les suppressions sont reportées.</p>
+        <div class="rrow">
+          <button type="button" class="secondary" id="x-export">Exporter</button>
+          <button type="button" class="secondary" id="x-import">Importer</button>
+          <input type="file" id="x-file" accept="application/json,.json" hidden>
+        </div>
+        <p class="rhint" id="x-state"></p>
+        <p class="msg" id="x-msg" hidden></p>
+      </div>
+
+      <div class="sect">
+        <h2>Remettre les heures à zéro</h2>
+        <p class="rhint">Efface les heures réalisées, au choix toutes ou celles d'un mois. Les sorties prévues et l'objectif ne changent pas.</p>
+        <div class="rrow">
+          <div class="field"><label for="r-scope">Heures à effacer</label><select id="r-scope"></select></div>
+          <button type="button" class="dangerbtn" id="r-go" data-confirm="Confirmer la remise à zéro">Remettre à zéro</button>
+        </div>
+        <p class="rhint" id="r-hint"></p>
+      </div>
+    </form>
+
+    <div class="big"><span class="done num" id="f-done">0</span><span class="of num" id="f-of">/ 30 h</span><span class="chip" id="f-status"></span></div>
+    <div class="grid" id="cells" aria-hidden="true"></div>
+    <div class="scale" id="scale"><span>0 h</span><span>30 h</span></div>
+    <div class="legend"><span><i class="d"></i>Réalisées</span><span><i class="p"></i>Prévues</span><span><i></i>À faire</span></div>
+    <div class="figs">
+      <div class="fig d"><span class="label">Réalisées</span><b class="num" id="k-done">0 h</b></div>
+      <div class="fig"><span class="label">Restantes</span><b class="num" id="k-left">30 h</b></div>
+      <div class="fig p"><span class="label">Prévues</span><b class="num" id="k-plan">0 h</b></div>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" id="t-log" aria-controls="p-log" aria-selected="true">Saisir</button>
+    <button class="tab" role="tab" id="t-plan" aria-controls="p-plan" aria-selected="false">Planifier</button>
+    <button class="tab" role="tab" id="t-stats" aria-controls="p-stats" aria-selected="false">Stats</button>
+    <button class="tab" role="tab" id="t-hist" aria-controls="p-hist" aria-selected="false">Historique</button>
+  </nav>
+
+  <section class="panel" id="p-log" role="tabpanel" aria-labelledby="t-log">
+    <div class="box" id="todo-box" hidden>
+      <h2>Sorties passées à valider</h2>
+      <p class="hint">Ces sorties prévues sont passées. Validez-les pour les compter.</p>
+      <div class="list" id="todo-list"></div>
+    </div>
+
+    <section class="box cal" aria-labelledby="cal-month">
+      <div class="cal-head">
+        <button type="button" class="navbtn" id="cal-prev" aria-label="Mois précédent">&#8249;</button>
+        <div class="cal-title"><h2 id="cal-month">Octobre 2026</h2><span class="cal-sum num" id="cal-sum"></span></div>
+        <button type="button" class="navbtn" id="cal-next" aria-label="Mois suivant">&#8250;</button>
+      </div>
+      <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-foot">
+        <div class="legend"><span><i class="d"></i>Réalisées</span><span><i class="p"></i>Prévues</span><span><i class="t"></i>Aujourd'hui</span></div>
+      </div>
+    </section>
+
+    <section class="box day" id="day" aria-labelledby="day-title" aria-live="polite">
+      <div class="day-head">
+        <div><h2 id="day-title">Aujourd'hui</h2><span class="day-sub" id="day-sub"></span></div>
+        <span class="chip ok" id="day-kind">Réalisée</span>
+      </div>
+      <div class="dlist" id="day-list"></div>
+      <p class="hint" id="day-hint"></p>
+      <div class="chips" id="q-type" role="group" aria-label="Type d'activité"></div>
+      <div class="qbtns" id="qbtns"></div>
+      <details class="more" id="day-more">
+        <summary>Autre durée ou heure</summary>
+        <form id="f-day" class="more-body">
+          <div class="two">
+            <div class="field"><label for="d-hours">Durée (heures)</label><input id="d-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
+            <div class="field" id="d-time-f"><label for="d-time">Heure de début (facultatif)</label><input id="d-time" type="time"></div>
+          </div>
+          <div class="chips" data-for="d-hours"></div>
+          <div class="field"><label for="d-note">Type</label><select id="d-note" class="type-select"></select></div>
+          <button class="primary" type="submit" id="d-submit">Ajouter 2 h</button>
+        </form>
+      </details>
+      <button type="button" class="linkbtn" id="q-edit">Changer la durée par défaut</button>
+    </section>
+  </section>
+
+  <section class="panel" id="p-plan" role="tabpanel" aria-labelledby="t-plan" hidden>
+    <form class="box" id="f-plan">
+      <h2>Planifier une sortie</h2>
+      <p class="hint">Les sorties prévues comptent comme « prévues » jusqu'à ce que vous les validiez. Pratique pour une sortie qui revient chaque semaine.</p>
+      <div class="field"><label for="p-title">Type</label><select id="p-title" class="type-select"></select></div>
+      <div class="three">
+        <div class="field wide"><label for="p-date">Date</label><input id="p-date" type="date" required></div>
+        <div class="field"><label for="p-time">Début</label><input id="p-time" type="time" required value="14:00"></div>
+        <div class="field"><label for="p-hours">Durée (h)</label><input id="p-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
+      </div>
+      <div class="chips" data-for="p-hours"></div>
+      <div class="two">
+        <div class="field"><label for="p-loc">Lieu (facultatif)</label><input id="p-loc" maxlength="160" placeholder="Adresse ou point de rendez-vous"></div>
+        <div class="field"><label for="p-repeat">Répéter chaque semaine</label>
+          <select id="p-repeat">
+            <option value="1">Une seule fois</option>
+            <option value="2">2 semaines</option><option value="3">3 semaines</option><option value="4">4 semaines</option>
+            <option value="5">5 semaines</option><option value="6">6 semaines</option><option value="8">8 semaines</option>
+            <option value="10">10 semaines</option><option value="12">12 semaines</option>
+          </select>
+        </div>
+      </div>
+      <div class="preview" id="p-preview"></div>
+      <button class="primary" type="submit" id="p-submit">Planifier la sortie</button>
+    </form>
+    <div class="box">
+      <div class="quick-head"><h2>Sorties à venir</h2><span class="today-tot num" id="up-month">Rien de prévu ce mois-ci</span></div>
+      <div class="list" id="up-list"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-stats" role="tabpanel" aria-labelledby="t-stats" hidden>
+    <div class="box"><h2>Vue d'ensemble</h2><div class="kpis" id="kpis"></div></div>
+    <div class="box"><h2>Heures par semaine</h2><p class="hint" id="chart-hint">8 dernières semaines</p><div class="chartwrap" id="chart"></div></div>
+    <div class="box"><h2>Jours de la semaine</h2><div id="weekdays" style="display:flex;flex-direction:column;gap:8px"></div></div>
+  </section>
+
+  <section class="panel" id="p-hist" role="tabpanel" aria-labelledby="t-hist" hidden>
+    <div class="box"><h2>Historique</h2><div class="list" id="hist-list"></div></div>
+  </section>
+
+  <div class="status" id="status">Données enregistrées sur cet appareil.</div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
