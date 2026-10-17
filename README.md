@@ -1,13 +1,13 @@
 # MyHours — version hors ligne
 
-MyHours est une appli web installable (PWA) pour suivre vos heures de prédication. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
+MyHours est une appli web installable (PWA) pour suivre vos heures de bénévolat. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
 
 ## Contenu du dossier
 
 | Fichier | Rôle |
 |---|---|
 | `index.html` | L'interface |
-| `app.js` | Le fonctionnement (calculs, stockage, envoi vers Google Agenda) |
+| `app.js` | Le fonctionnement (calculs, stockage, export/import) |
 | `sw.js` | Le service worker qui met l'appli en cache pour le hors ligne |
 | `manifest.webmanifest` | Nom, couleurs et icônes pour l'installation |
 | `icons/` | Les icônes de l'appli |
@@ -33,20 +33,19 @@ Ouvrez l'adresse ci-dessus **avec du réseau**, puis :
 
 Ouvrez l'appli une fois depuis l'icône. Ensuite, elle fonctionne en mode avion.
 
-## 3. Saisir ses heures
+## 3. Prévoir une sortie
 
-- **Calendrier** : l'onglet **Saisir** affiche le mois. Plus une case est bleue, plus vous avez fait d'heures ce jour-là ; les jours prévus sont en orange, et un point rouge marque aujourd'hui. Changez de mois avec les flèches ou en glissant le doigt.
-- **Ajouter des heures** : touchez un jour, choisissez le type, puis **+1 h**, **+1 h 30** ou **+2 h**. Un jour passé ou aujourd'hui compte en heures réalisées ; un jour à venir crée une prévision. « Autre durée ou heure » permet une durée précise ou une heure de début.
-- **Type d'activité** : chaque saisie ou séance est une **Prédic** (par défaut), une **Étude** ou un **Présentoir**. Le type choisi reste sélectionné pour les fois suivantes.
-- **Remettre à zéro** : bouton **Réglages** → *Remettre les heures à zéro*. Choisissez **Toutes les heures** ou un mois précis, puis touchez deux fois pour confirmer. Les séances planifiées et l'objectif ne changent pas. Un bouton **Annuler** apparaît quelques secondes en cas d'erreur.
+Dans **Saisir → Autre durée ou autre date**, choisissez une date à venir : la sortie est enregistrée en prévision et apparaît dans **Sorties à venir**, avec un bouton **Agenda** pour l'ajouter à Google Agenda. En haut de ce bloc, le total des heures prévues sur les 30 prochains jours se met à jour à chaque ajout ou annulation. Une fois la date passée, elle remonte dans **Sorties passées à valider**.
 
-## 4. Envoyer vers Google Agenda
+## 4. Synchroniser entre appareils
 
-Le bouton **Envoyer vers Google Agenda** (en haut) ajoute toutes les séances à venir dans votre agenda Google. Renvoyer met à jour les séances déjà envoyées sans créer de doublon, et retire de l'agenda celles annulées entre-temps.
+Il n'y a pas de serveur : la synchronisation se fait à la main avec le bouton **Synchro**.
 
-Une seule fois avant : créez un ID client OAuth Google (projet Google Cloud, API Google Calendar activée, type « Application Web », origines `https://viperfreeze.github.io` et `http://localhost:8000`), puis collez-le dans **Réglages → ID client Google**. L'ID est gardé sur chaque appareil : à saisir une fois par appareil.
+1. Sur l'appareil A : **Exporter**, puis envoyez-vous le fichier (Drive, mail, messagerie…).
+2. Sur l'appareil B : **Importer** ce fichier.
+3. Les deux carnets sont fusionnés. Rien n'est écrasé, et les suppressions sont reportées. Si l'appareil B avait aussi des nouveautés, l'appli vous propose de refaire l'opération dans l'autre sens.
 
-**Sauvegarde** : à chaque envoi, une copie de toutes les données est aussi gardée dans un dossier caché de votre Google Drive (activez aussi **Google Drive API** dans le projet Google Cloud). **Réglages → Restaurer depuis Google Drive** remet cette copie sur l'appareil (nouveau téléphone, réinstallation). **Sauvegarder maintenant** fait une copie sans passer par l'agenda.
+Le point orange sur **Synchro** signale des modifications pas encore exportées.
 
 ## 5. Modifier l'appli sans la réinstaller
 
@@ -58,10 +57,11 @@ Inutile de désinstaller : l'appli se met à jour toute seule.
 
 Vos heures sont conservées : elles ne sont pas stockées dans les fichiers de l'appli. Si la bannière n'apparaît pas tout de suite, fermez l'appli et rouvrez-la (GitHub Pages peut garder l'ancienne version en cache une dizaine de minutes).
 
-**Cas de l'icône** : Android met à jour l'icône de l'écran d'accueil de lui-même, parfois avec un délai. Sur iPhone, l'icône reste celle de l'installation. Pour la changer, il faut retirer l'appli de l'écran d'accueil et la rajouter, ce qui efface ses données (heures réalisées comprises).
+**Cas de l'icône** : Android met à jour l'icône de l'écran d'accueil de lui-même, parfois avec un délai. Sur iPhone, l'icône reste celle de l'installation. Pour la changer, il faut retirer l'appli de l'écran d'accueil et la rajouter, ce qui efface ses données : **exportez d'abord**, réinstallez, puis importez le fichier.
 
 ## À savoir
 
-- **Sauvegarde** : les heures sont stockées sur l'appareil. Désinstaller l'appli ou effacer les données du navigateur les supprime : seule la dernière sauvegarde Google Drive permet de les récupérer.
+- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet. Exportez de temps en temps : le fichier sert aussi de sauvegarde.
 - **iPhone** : l'appli installée et Safari ont chacun leur propre stockage. Utilisez toujours l'icône de l'écran d'accueil.
-- **Tester sur ordinateur** : double-cliquez sur `apercu.bat`, l'appli s'ouvre sur `http://localhost:8000`. Après une modification, appuyez sur F5. En aperçu local, le mode hors ligne est désactivé pour toujours voir la dernière version.
+- **Google Agenda** : le bouton **Agenda** d'une sortie ouvre Google Agenda avec l'événement pré-rempli, à confirmer. Il faut du réseau à ce moment-là. Si vous annulez une sortie, retirez-la aussi de l'agenda vous-même.
+- **Tester sur ordinateur** : dans le dossier, lancez `python -m http.server 8000` puis ouvrez `http://localhost:8000`. En ouvrant `index.html` directement par double-clic, l'appli fonctionne mais le mode hors ligne n'est pas actif.
