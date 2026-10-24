@@ -45,7 +45,22 @@ Une séance planifiée validée sur deux appareils n'est comptée qu'une fois ap
 
 Le point orange sur **Synchroniser** signale des modifications pas encore exportées.
 
-## 4. Modifier l'appli sans la réinstaller
+## 4. Sauvegarde automatique
+
+Une fois activée, chaque modification est copiée quelques secondes plus tard dans un **Gist privé** de votre compte GitHub. GitHub garde l'historique de toutes les versions.
+
+1. Dans MyHours : **Réglages → Sauvegarde automatique → Créez-le sur GitHub**. La page de création du jeton s'ouvre avec la case **gist** déjà cochée.
+2. Choisissez **No expiration**, validez, copiez le jeton (`ghp_…`).
+3. Collez-le dans MyHours et touchez **Activer**.
+
+Le jeton reste sur le téléphone : il n'est jamais dans la sauvegarde ni dans un export. Il ne donne accès qu'à vos gists.
+
+- **Hors ligne**, la copie part dès le retour du réseau. L'état est affiché en bas de l'écran.
+- **Le lien « Sauvegarder »** en bas de l'écran force une sauvegarde immédiate. Sans sauvegarde automatique, il crée un fichier à la place.
+- **Nouveau téléphone ou réinstallation** : collez le même jeton, la sauvegarde est retrouvée et fusionnée avec ce qui est sur l'appareil. Rien n'est écrasé.
+- **Retrouver une ancienne version** : sur gist.github.com, ouvrez le Gist « MyHours – sauvegarde automatique », onglet **Revisions**.
+
+## 5. Modifier l'appli sans la réinstaller
 
 Inutile de désinstaller : l'appli se met à jour toute seule.
 
@@ -59,7 +74,7 @@ Vos heures sont conservées : elles ne sont pas stockées dans les fichiers de l
 
 ## À savoir
 
-- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet. Exportez de temps en temps : le fichier sert aussi de sauvegarde.
+- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet du téléphone. Activez la sauvegarde automatique (section 4), ou exportez de temps en temps : le fichier sert aussi de sauvegarde.
 - **iPhone** : l'appli installée et Safari ont chacun leur propre stockage. Utilisez toujours l'icône de l'écran d'accueil.
 - **Google Agenda** : le bouton d'une séance ouvre Google Agenda avec l'événement pré-rempli, à confirmer. Il faut du réseau à ce moment-là. Si vous annulez une séance, retirez-la aussi de l'agenda vous-même.
 - **Tester sur ordinateur** : dans le dossier, lancez `python -m http.server 8000` puis ouvrez `http://localhost:8000`. En ouvrant `index.html` directement par double-clic, l'appli fonctionne mais le mode hors ligne n'est pas actif.

@@ -128,9 +128,121 @@ if (typeof document !== "undefined") (function () {
   function save() {
     try { localStorage.setItem(LS, JSON.stringify(state)); storageOk = true; }
     catch (e) { storageOk = false; }
-    $("#status").textContent = storageOk ? "Données enregistrées sur cet appareil." : "Impossible d'enregistrer sur cet appareil (stockage plein ou bloqué). Exportez vos données dans Réglages pour ne rien perdre.";
+    scheduleBackup();
   }
   function commit() { state.changes = (state.changes || 0) + 1; save(); render(); }
+
+  /* ---------- Sauvegarde automatique dans un Gist GitHub privé ----------
+     Un jeton GitHub (droit « gist » seulement) est collé une fois dans Réglages. Il reste sur cet appareil,
+     hors des données : il n'apparaît jamais dans un export. Après chaque modification, une copie complète
+     (le même contenu qu'un export) part quelques secondes plus tard dans un Gist privé. GitHub garde
+     l'historique de chaque version. Si le Gist a été modifié ailleurs (autre appareil), il est d'abord
+     fusionné ici, sans rien écraser. Hors ligne, l'envoi attend le retour du réseau. */
+  const GH = LS + "-gist"; // { token, id, sig, remoteAt, last, error }
+  const GIST_FILE = "myhours-sauvegarde.json", GIST_DESC = "MyHours – sauvegarde automatique";
+  const ghGet = () => { try { return JSON.parse(localStorage.getItem(GH) || "{}") || {}; } catch (e) { return {}; } };
+  const ghSet = patch => { const v = { ...ghGet(), ...patch }; try { localStorage.setItem(GH, JSON.stringify(v)); } catch (e) {} return v; };
+  const ghOn = () => !!ghGet().token;
+  /* Empreinte des données : sert à savoir si la dernière copie envoyée est encore à jour. */
+  function dataSig() {
+    const t = JSON.stringify(exportPayload(state).data);
+    let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return t.length + ":" + h;
+  }
+  const ghPending = () => ghOn() && ghGet().sig !== dataSig();
+  async function gh(method, path, token, body) {
+    try {
+      return await fetch("https://api.github.com" + path, {
+        method, cache: "no-store",
+        headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", ...(body ? { "Content-Type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined
+      });
+    } catch (e) { throw new Error("GitHub est injoignable pour le moment."); }
+  }
+  function ghError(r) {
+    if (r.status === 401) return new Error("Jeton GitHub refusé ou expiré : collez-en un nouveau dans Réglages.");
+    if (r.status === 403 || r.status === 404 || r.status === 422) return new Error("Ce jeton n'a pas le droit de gérer les gists.");
+    return new Error(`GitHub a refusé la sauvegarde (erreur ${r.status}).`);
+  }
+  const offlineError = () => Object.assign(new Error("Pas de réseau : la sauvegarde partira dès le retour de la connexion."), { offline: true });
+  /* Vérifie le jeton et retrouve une sauvegarde existante (réinstallation, nouveau téléphone). */
+  async function ghFind(token) {
+    const r = await gh("GET", "/gists?per_page=100", token);
+    if (!r.ok) throw ghError(r);
+    const scopes = r.headers.get("X-OAuth-Scopes");
+    if (scopes !== null && !scopes.split(",").map(s => s.trim()).includes("gist")) throw new Error("Ce jeton n'a pas le droit « gist ». Créez-en un avec cette case cochée.");
+    const g = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
+    return g ? g.id : "";
+  }
+  async function ghMerge(g) {
+    const f = g.files && g.files[GIST_FILE];
+    if (!f) return null;
+    let text = f.content;
+    if (f.truncated) { const r = await fetch(f.raw_url, { cache: "no-store" }); if (!r.ok) throw new Error("Lecture de la sauvegarde en ligne impossible."); text = await r.text(); }
+    const { merged, report } = merge(state, parseImport(text));
+    state = merged; save(); render();
+    return report;
+  }
+  let ghBusy = null, ghTimer = null;
+  /* Récupère ce qui a changé en ligne, puis envoie la copie locale si elle n'est plus à jour. */
+  function ghSync() {
+    if (ghBusy) return ghBusy;
+    ghBusy = (async () => {
+      const s = ghGet();
+      if (!s.token) throw new Error("Sauvegarde automatique non activée.");
+      if (!navigator.onLine) throw offlineError();
+      let report = null;
+      if (s.id) {
+        const r = await gh("GET", "/gists/" + s.id, s.token);
+        if (r.status === 404) ghSet({ id: "", remoteAt: "" }); // Gist supprimé : on en recrée un
+        else if (!r.ok) throw ghError(r);
+        else { const g = await r.json(); if (g.updated_at !== s.remoteAt) { report = await ghMerge(g); ghSet({ remoteAt: g.updated_at }); } }
+      }
+      if (ghPending()) {
+        const sig = dataSig(), cur = ghGet();
+        const files = { [GIST_FILE]: { content: JSON.stringify(exportPayload(state), null, 1) } };
+        const r = cur.id
+          ? await gh("PATCH", "/gists/" + cur.id, cur.token, { files })
+          : await gh("POST", "/gists", cur.token, { description: GIST_DESC, public: false, files });
+        if (!r.ok) throw ghError(r);
+        const g = await r.json();
+        ghSet({ id: g.id, sig, remoteAt: g.updated_at, last: nowIso() });
+      }
+      ghSet({ error: "" });
+      return report;
+    })()
+      .catch(e => { if (!e.offline) ghSet({ error: e.message }); throw e; })
+      .finally(() => { ghBusy = null; renderStatus(); if (ghPending() && navigator.onLine && !ghGet().error) ghSoon(1500); });
+    renderStatus();
+    return ghBusy;
+  }
+  function ghSoon(delay) {
+    clearTimeout(ghTimer);
+    if (!ghOn() || !navigator.onLine) { renderStatus(); return; }
+    ghTimer = setTimeout(() => ghSync().then(rep => { if (rep && (rep.addedEntries || rep.addedPlanned || rep.removed)) toast("Données récupérées depuis la sauvegarde en ligne"); }).catch(() => {}), delay);
+    renderStatus();
+  }
+  function scheduleBackup() { if (ghPending()) ghSoon(4000); else renderStatus(); }
+
+  function ghLabel() {
+    const s = ghGet();
+    if (!s.token) return "";
+    if (ghBusy) return "sauvegarde en cours…";
+    if (s.error) return "la sauvegarde en ligne a échoué";
+    if (ghPending()) return navigator.onLine ? "sauvegarde en ligne dans un instant" : "sauvegarde en ligne en attente du réseau";
+    return s.last ? `sauvegardé en ligne le ${dfStamp.format(new Date(s.last))}` : "sauvegarde en ligne active";
+  }
+  function renderStatus() {
+    const st = $("#status-text"); if (!st) return;
+    const lbl = ghLabel();
+    st.textContent = !storageOk
+      ? "Impossible d'enregistrer sur cet appareil (stockage plein ou bloqué). Sauvegardez vos données pour ne rien perdre."
+      : `Données enregistrées sur cet appareil${lbl ? ` · ${lbl}` : ""}.`;
+    const hint = $("#gh-hint"); if (!hint) return;
+    const s = ghGet();
+    $("#gh-setup").hidden = !!s.token; $("#gh-active").hidden = !s.token; $("#gh-help").hidden = !!s.token;
+    if (s.token) hint.textContent = cap(lbl) + "." + (s.error ? ` ${s.error}` : "");
+  }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   /* ---------- thème : automatique, clair ou sombre ---------- */
@@ -558,7 +670,7 @@ if (typeof document !== "undefined") (function () {
       $("#s-gcid").value = getGcid();
       $("#s-err").hidden = true; $("#x-msg").hidden = true;
       setDefaultChips(state.defaultHours);
-      updateSettingsSum(); renderBackup(); renderSyncState(); disarmReset(); renderReset();
+      updateSettingsSum(); renderBackup(); renderSyncState(); disarmReset(); renderReset(); renderStatus();
     }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
@@ -627,7 +739,9 @@ if (typeof document !== "undefined") (function () {
     const last = state.lastSync ? `Dernier export ou import : ${dfStamp.format(new Date(state.lastSync))}.` : "Aucun export pour l'instant.";
     $("#x-state").textContent = `${last} ${ch ? `${plural(ch, "modification")} depuis.` : "Rien de nouveau depuis."}`;
   }
-  $("#x-export").addEventListener("click", async () => {
+  /* Crée le fichier de sauvegarde (menu de partage sur mobile, téléchargement sinon).
+     Renvoie le nom du fichier, ou null si l'utilisateur a fermé le menu de partage. */
+  async function exportFile() {
     const json = JSON.stringify(exportPayload(state), null, 2);
     const name = `myhours-${ymd(new Date())}.json`;
     let file = null;
@@ -642,11 +756,67 @@ if (typeof document !== "undefined") (function () {
         setTimeout(() => URL.revokeObjectURL(url), 4000);
       }
     } catch (e) {
-      if (e && e.name === "AbortError") return;
-      xmsg("L'export n'a pas pu être envoyé. Réessayez, ou utilisez un autre navigateur."); return;
+      if (e && e.name === "AbortError") return null;
+      throw new Error("L'export n'a pas pu être envoyé. Réessayez, ou utilisez un autre navigateur.");
     }
     state.lastSync = nowIso(); state.changes = 0; save(); render();
-    xmsg(`Fichier « ${name} » créé. Importez-le sur votre autre appareil, ou gardez-le comme sauvegarde.`, true);
+    return name;
+  }
+  $("#x-export").addEventListener("click", async () => {
+    try {
+      const name = await exportFile();
+      if (name) xmsg(`Fichier « ${name} » créé. Importez-le sur votre autre appareil, ou gardez-le comme sauvegarde.`, true);
+    } catch (e) { xmsg(e.message); }
+  });
+
+  /* Sauvegarde automatique : activation, sauvegarde immédiate, désactivation. */
+  $("#gh-on").addEventListener("click", async ev => {
+    const btn = ev.currentTarget, token = $("#gh-token").value.trim(), hint = $("#gh-hint");
+    if (!token) { hint.textContent = "Collez d'abord votre jeton GitHub."; $("#gh-token").focus(); return; }
+    if (!navigator.onLine) { hint.textContent = "Pas de réseau : réessayez une fois connecté."; return; }
+    btn.disabled = true; btn.textContent = "Vérification…";
+    try {
+      const id = await ghFind(token);
+      ghSet({ token, id, sig: "", remoteAt: "", last: "", error: "" });
+      $("#gh-token").value = "";
+      const rep = await ghSync();
+      toast(id ? (rep && (rep.addedEntries || rep.addedPlanned) ? "Sauvegarde retrouvée et fusionnée avec cet appareil" : "Sauvegarde retrouvée : elle sera tenue à jour")
+               : "Sauvegarde automatique activée");
+    } catch (e) {
+      if (!ghGet().id) { try { localStorage.removeItem(GH); } catch (err) {} } // jeton refusé : on n'enregistre rien
+      renderStatus();
+      hint.textContent = e.message || "Activation impossible.";
+    } finally { btn.disabled = false; btn.textContent = "Activer"; }
+  });
+  $("#gh-token").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); $("#gh-on").click(); } });
+  $("#gh-now").addEventListener("click", () => manualBackup());
+  $("#gh-stop").addEventListener("click", ev => {
+    if (!armed(ev.currentTarget)) return;
+    clearTimeout(ghTimer);
+    try { localStorage.removeItem(GH); } catch (e) {}
+    renderStatus(); $("#gh-hint").textContent = "Désactivée. La dernière copie reste dans votre Gist sur GitHub.";
+  });
+
+  /* Le petit lien « Sauvegarder » en bas de l'écran : en ligne si la sauvegarde automatique est active,
+     sinon un fichier. */
+  async function manualBackup() {
+    if (ghOn()) {
+      if (!navigator.onLine) { toast("Pas de réseau : la sauvegarde partira dès le retour de la connexion."); return; }
+      clearTimeout(ghTimer);
+      try { await ghSync(); toast("Sauvegarde en ligne à jour"); }
+      catch (e) { toast(e.message || "Sauvegarde en ligne impossible."); }
+      return;
+    }
+    try { const name = await exportFile(); if (name) toast(`Fichier « ${name} » créé`); }
+    catch (e) { toast(e.message); }
+  }
+  $("#quick-save").addEventListener("click", manualBackup);
+  window.addEventListener("online", () => ghSoon(1000));
+  window.addEventListener("offline", renderStatus);
+  document.addEventListener("visibilitychange", () => {
+    if (!ghOn() || !navigator.onLine) return;
+    if (document.hidden) { if (ghPending()) { clearTimeout(ghTimer); ghSync().catch(() => {}); } } // on part : envoyer tout de suite
+    else ghSoon(1500); // on revient : récupérer ce qui a changé ailleurs
   });
   $("#x-import").addEventListener("click", () => { $("#x-file").value = ""; $("#x-file").click(); });
   $("#x-file").addEventListener("change", async () => {
@@ -956,4 +1126,5 @@ if (typeof document !== "undefined") (function () {
   window.addEventListener("storage", e => { if (e.key === LS) { state = load(); render(); } });
 
   save(); render();
+  ghSoon(1500); // à l'ouverture : récupérer ce qui a changé en ligne, puis envoyer ce qui manque
 })();

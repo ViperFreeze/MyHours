@@ -261,6 +261,8 @@ svg .val{fill:var(--ink);font-weight:500}
 .more-body{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 
 .status{font-size:12px;color:var(--muted);text-align:center}
+.status-link{background:none;border:0;padding:4px 2px;margin:0;font:inherit;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.status-link:hover{color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:calc(100% - 32px);width:max-content;z-index:20;opacity:0;pointer-events:none;transition:opacity .2s;display:flex;gap:14px;align-items:center}
 .toast.on{opacity:1;pointer-events:auto}
 .toast button{background:none;border:0;padding:4px 0;color:var(--bg);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:nowrap}
@@ -300,6 +302,21 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="field full"><label for="s-name">Nom affiché dans l'agenda (facultatif)</label><input id="s-name" maxlength="80" placeholder="Mon engagement"></div>
       <div class="field full"><label for="s-gcid">ID client Google (pour l'envoi vers l'agenda et la sauvegarde Drive)</label><input id="s-gcid" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></div>
       <div class="row"><button type="button" class="secondary" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
+
+      <div class="sect">
+        <h2>Sauvegarde automatique</h2>
+        <p class="rhint">Après chaque modification, une copie de toutes vos données part dans un Gist privé de votre compte GitHub, qui garde l'historique des versions. Sur un nouveau téléphone, collez le même jeton : la sauvegarde est retrouvée et fusionnée.</p>
+        <div class="rrow" id="gh-setup">
+          <div class="field"><label for="gh-token">Jeton GitHub</label><input id="gh-token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…"></div>
+          <button type="button" class="secondary" id="gh-on">Activer</button>
+        </div>
+        <p class="rhint" id="gh-help">Pas encore de jeton ? <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=MyHours%20sauvegarde" target="_blank" rel="noopener">Créez-le sur GitHub</a> : la case <b>gist</b> est déjà cochée, choisissez « No expiration », puis copiez le jeton ici. Il reste sur cet appareil et n'est jamais exporté.</p>
+        <div class="rrow" id="gh-active" hidden>
+          <button type="button" class="secondary" id="gh-now">Sauvegarder maintenant</button>
+          <button type="button" class="dangerbtn" id="gh-stop" data-confirm="Confirmer la désactivation">Désactiver</button>
+        </div>
+        <p class="rhint" id="gh-hint" aria-live="polite"></p>
+      </div>
 
       <div class="sect">
         <h2>Sauvegarde Google Drive</h2>
@@ -438,7 +455,7 @@ svg .val{fill:var(--ink);font-weight:500}
     <div class="box"><h2>Historique</h2><div class="list" id="hist-list"></div></div>
   </section>
 
-  <div class="status" id="status">Données enregistrées sur cet appareil.</div>
+  <div class="status" id="status"><span id="status-text">Données enregistrées sur cet appareil.</span> <button type="button" class="status-link" id="quick-save">Sauvegarder</button></div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
