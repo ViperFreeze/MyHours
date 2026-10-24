@@ -887,7 +887,7 @@ if (typeof document !== "undefined") (function () {
       if (!(v > 0)) { toast("Indiquez les heures effectuées."); return; }
       const t = nowIso();
       state.planned = state.planned.filter(x => x.id !== id); tomb(id);
-      state.entries.push({ id: uid(), date: p.start.slice(0, 10), hours: Math.round(v * 100) / 100, note: p.title, source: "planning", created: t, updated: t });
+      state.entries.push({ id: "v-" + p.id, date: p.start.slice(0, 10), hours: Math.round(v * 100) / 100, note: p.title, source: "planning", created: t, updated: t });
       commit(); toast(`${dur(v)} validées`);
     } else if (act === "skip" || act === "cancel") {
       if (!armed(btn)) return;

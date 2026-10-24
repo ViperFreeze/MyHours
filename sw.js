@@ -1,8 +1,9 @@
 /* Service worker de MyHours.
    - L'appli s'ouvre toujours depuis le cache : instantané, et ça marche hors ligne.
-   - Dès qu'il y a du réseau, chaque fichier est revérifié en arrière-plan. Si un fichier a changé
-     (vous avez mis une nouvelle version en ligne), il est remplacé dans le cache et l'appli affiche
-     « Mettre à jour ». Plus besoin de désinstaller, ni de changer de numéro de version. */
+   - Dès qu'il y a du réseau, TOUS les fichiers de l'appli sont revérifiés ensemble en arrière-plan.
+     Si au moins un a changé, ils sont tous remplacés d'un coup dans le cache, puis l'appli affiche
+     « Mettre à jour ». On ne mélange donc jamais un ancien app.js avec un nouvel index.html.
+     Si un fichier ne peut pas être téléchargé (réseau coupé en cours de route), rien n'est modifié. */
 const CACHE = "myhours-app";
 const FONT_CACHE = "myhours-fonts";
 const APP_FILES = [
@@ -16,11 +17,16 @@ const APP_FILES = [
   "./icons/logo-mark.png"
 ];
 const abs = p => new URL(p, self.registration.scope).href;
+const APP_URLS = APP_FILES.map(abs);
+const APP_SET = new Set(APP_URLS);
+const INDEX = abs("./index.html");
+const APP_JS = abs("./app.js");
+const CHECK_INTERVAL = 30 * 1000; // au plus une vérification toutes les 30 s
 
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(APP_FILES.map(p => new Request(abs(p), { cache: "reload" }))))
+      .then(c => c.addAll(APP_URLS.map(u => new Request(u, { cache: "reload" }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -46,17 +52,31 @@ async function notifyUpdate() {
   clients.forEach(c => c.postMessage({ type: "update-available" }));
 }
 
-/* Revalide un fichier auprès du serveur et met le cache à jour. */
-async function refresh(cache, url, cached) {
-  const res = await fetch(url, { cache: "no-cache" });
-  if (!res || !res.ok) return res;
-  if (cached) {
-    const changed = !(await sameBytes(cached.clone(), res.clone()));
-    if (changed) { await cache.put(url, res.clone()); notifyUpdate(); }
-  } else {
-    await cache.put(url, res.clone());
-  }
-  return res;
+/* Vérifie l'ensemble des fichiers et met le cache à jour en bloc. */
+let checking = null, lastCheck = 0;
+function checkForUpdate() {
+  if (checking) return checking;
+  if (Date.now() - lastCheck < CHECK_INTERVAL) return Promise.resolve(false);
+  checking = (async () => {
+    const cache = await caches.open(CACHE);
+    const fresh = await Promise.all(APP_URLS.map(u => fetch(u, { cache: "no-cache" })));
+    if (fresh.some(r => !r || !r.ok)) return false; // version incomplète : on garde l'ancienne telle quelle
+
+    let changed = false, missing = false;
+    for (let i = 0; i < APP_URLS.length; i++) {
+      const cached = await cache.match(APP_URLS[i]);
+      if (!cached) { missing = true; continue; }
+      if (!(await sameBytes(cached, fresh[i].clone()))) { changed = true; break; }
+    }
+    if (!changed && !missing) return false;
+
+    await Promise.all(APP_URLS.map((u, i) => cache.put(u, fresh[i])));
+    if (changed) await notifyUpdate();
+    return changed;
+  })()
+    .catch(() => false)
+    .finally(() => { checking = null; lastCheck = Date.now(); });
+  return checking;
 }
 
 self.addEventListener("fetch", event => {
@@ -76,15 +96,23 @@ self.addEventListener("fetch", event => {
   if (url.origin !== self.location.origin) return;
 
   // Ouverture de l'appli → index.html ; autres fichiers → eux-mêmes (sans paramètres d'URL).
-  const key = req.mode === "navigate" ? abs("./index.html") : url.origin + url.pathname;
-  event.respondWith(caches.open(CACHE).then(async cache => {
+  const key = req.mode === "navigate" ? INDEX : url.origin + url.pathname;
+  if (!APP_SET.has(key)) return; // fichier hors appli : réseau normal
+
+  // Ouvrir l'appli (ou la ramener au premier plan) déclenche la vérification de l'ensemble.
+  if (key === INDEX || key === APP_JS) event.waitUntil(checkForUpdate());
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
     const cached = await cache.match(key);
-    const network = refresh(cache, key, cached ? cached.clone() : null);
-    if (cached) {
-      event.waitUntil(network.catch(() => {}));
-      return cached;
+    if (cached) return cached;
+    try {
+      const res = await fetch(key, { cache: "no-cache" });
+      if (res && res.ok) await cache.put(key, res.clone());
+      return res;
+    } catch (e) {
+      if (req.mode === "navigate") return (await cache.match(INDEX)) || Response.error();
+      return Response.error();
     }
-    try { return await network; }
-    catch (e) { return req.mode === "navigate" ? (await cache.match(abs("./index.html"))) || Response.error() : Response.error(); }
-  }));
+  })());
 });

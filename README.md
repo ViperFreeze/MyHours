@@ -1,62 +1,65 @@
 # MyHours — version hors ligne
 
-MyHours est une appli web installable (PWA) pour suivre vos heures de prédication. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
+MyHours est une appli web installable (PWA) pour suivre vos heures de bénévolat. Une fois installée, elle s'ouvre depuis l'écran d'accueil et fonctionne sans connexion. Vos données restent sur l'appareil.
 
 ## Contenu du dossier
 
 | Fichier | Rôle |
 |---|---|
 | `index.html` | L'interface |
-| `app.js` | Le fonctionnement (calculs, stockage, Google Agenda, sauvegardes) |
+| `app.js` | Le fonctionnement (calculs, stockage, export/import) |
 | `sw.js` | Le service worker qui met l'appli en cache pour le hors ligne |
 | `manifest.webmanifest` | Nom, couleurs et icônes pour l'installation |
-| `icons/` | Le logo MyHours et les icônes d'installation |
-| `apercu.bat` | Aperçu de l'appli sur ordinateur (Windows) |
+| `icons/` | Le logo MyHours (`logo-mark.png`, plus `logo-full.png` comme image source) et les icônes d'installation générées à partir de lui |
 
-## 1. Mettre l'appli en ligne
+## 1. Mettre l'appli en ligne (une seule fois)
 
-L'appli est publiée avec GitHub Pages à l'adresse `https://viperfreeze.github.io/myhours/`.
+Le téléphone doit télécharger l'appli une première fois depuis une adresse en `https://`. Le plus simple et gratuit : GitHub Pages.
 
-Pour la mettre à jour : sur GitHub, **Add file → Upload files**, glissez le **contenu** du dossier (pas le dossier lui-même), puis **Commit changes**. Après une à deux minutes, ouvrez MyHours avec du réseau : elle affiche **« Une nouvelle version est prête »**. Touchez **Mettre à jour**. Vos heures sont conservées.
+1. Connectez-vous sur github.com (ou créez un compte gratuit).
+2. Créez un nouveau dépôt, par exemple `myhours`, en **Public**.
+3. Dans le dépôt : **Add file → Upload files**, puis glissez **tout le contenu** du dossier (les fichiers et le dossier `icons`). Validez avec **Commit changes**.
+4. Allez dans **Settings → Pages**. Dans *Build and deployment*, choisissez **Deploy from a branch**, branche `main`, dossier `/ (root)`, puis **Save**.
+5. Après une à deux minutes, l'appli est disponible à l'adresse `https://viperfreeze.github.io/myhours/`.
+
+Le dépôt public rend le **code** visible, pas vos heures : elles ne quittent jamais votre téléphone.
 
 ## 2. Installer sur le téléphone
 
-Ouvrez l'adresse **avec du réseau**, puis :
+Ouvrez l'adresse ci-dessus **avec du réseau**, puis :
 
-- **Android (Chrome)** : touchez **Installer** dans le bandeau, ou menu ⋮ → **Installer l'application**.
+- **Android (Chrome)** : touchez **Installer** dans le bandeau de l'appli, ou menu ⋮ → **Installer l'application**.
 - **iPhone (Safari)** : bouton **Partager** → **Sur l'écran d'accueil**.
 
-## 3. Saisir ses heures
+Ouvrez l'appli une fois depuis l'icône. Ensuite, elle fonctionne en mode avion.
 
-- **Objectif mensuel** : le grand compteur montre les heures du mois en cours. Il repart à zéro le 1er ; l'historique est conservé.
-- **Calendrier** (onglet **Saisir**) : plus une case est bleue, plus vous avez fait d'heures ce jour-là. Les jours prévus sont en orange, un point rouge marque aujourd'hui. Changez de mois avec les flèches ou en glissant le doigt.
-- **Ajouter des heures** : touchez un jour, choisissez le type, puis un bouton de durée, et touchez une deuxième fois pour confirmer. Un jour passé ou aujourd'hui compte en heures réalisées ; un jour à venir crée une sortie prévue. « Autre durée ou heure » permet une durée précise ou une heure de début.
-- **Type d'activité** : **Prédic** (par défaut), **Étude** ou **Présentoir**. Le dernier type choisi reste sélectionné.
-- **Sorties passées à valider** : une sortie prévue dont la date est passée apparaît en haut de **Saisir**. Validez-la (en corrigeant les heures si besoin) ou touchez **Pas faite**.
-- **Planifier** : pour une sortie qui revient chaque semaine (jusqu'à 12 semaines). La liste **Sorties à venir** affiche le total d'heures prévues sur le mois en cours.
+## 3. Synchroniser entre appareils
 
-## 4. Google Agenda
+Il n'y a pas de serveur : la synchronisation se fait à la main avec le bouton **Synchroniser**.
 
-- **Sans configuration** : chaque sortie prévue a un bouton **Agenda** qui ouvre Google Agenda avec l'événement pré-rempli, à confirmer.
-- **Avec un ID client Google** : le bouton agenda en haut envoie toutes les sorties à venir d'un coup. Renvoyer met à jour sans doublon, et retire de l'agenda les sorties annulées entre-temps.
+1. Sur l'appareil A : **Exporter**, puis envoyez-vous le fichier (Drive, mail, messagerie…).
+2. Sur l'appareil B : **Importer** ce fichier.
+3. Les deux carnets sont fusionnés. Rien n'est écrasé, et les suppressions sont reportées. Si l'appareil B avait aussi des nouveautés, l'appli vous propose de refaire l'opération dans l'autre sens.
 
-Pour l'ID client (une seule fois) : projet Google Cloud, activez **Google Calendar API** et **Google Drive API**, créez un ID client OAuth de type « Application Web » avec les origines `https://viperfreeze.github.io` et `http://localhost:8000`, puis collez-le dans **Réglages → ID client Google** (à faire sur chaque appareil).
+Une séance planifiée validée sur deux appareils n'est comptée qu'une fois après la fusion.
 
-## 5. Sauvegarder et synchroniser
+Le point orange sur **Synchroniser** signale des modifications pas encore exportées.
 
-Tout est dans **Réglages** :
+## 4. Modifier l'appli sans la réinstaller
 
-- **Sauvegarde Google Drive** : une copie est faite à chaque envoi vers Google Agenda, ou avec **Sauvegarder maintenant**. **Restaurer depuis Google Drive** remet cette copie sur l'appareil (nouveau téléphone, réinstallation).
-- **Fichier de sauvegarde** (sans compte Google) : **Exporter** crée un fichier à vous envoyer. **Importer** le fusionne sur l'autre appareil : rien n'est écrasé, les suppressions sont reportées.
-- **Remettre les heures à zéro** : toutes, ou celles d'un mois. Deux appuis pour confirmer, puis **Annuler** reste disponible quelques secondes.
+Inutile de désinstaller : l'appli se met à jour toute seule.
 
-## 6. Autres réglages
+1. Modifiez les fichiers et renvoyez-les sur GitHub (**Add file → Upload files** en remplaçant les anciens, ou `git push`).
+2. Attendez une à deux minutes que GitHub Pages publie la nouvelle version.
+3. Ouvrez MyHours avec du réseau. Elle démarre d'abord sur la version en cache, vérifie tous les fichiers en arrière-plan, les remplace ensemble s'il y a du nouveau, puis affiche **« Une nouvelle version est prête »**. Touchez **Mettre à jour**.
 
-- **Thème** : le premier bouton en haut passe de automatique (suit le téléphone) à clair, puis sombre. Le choix est gardé sur l'appareil.
-- **Durée par défaut** des boutons rapides et **heures visées par mois** : dans **Réglages**, avec un aperçu du rythme à tenir avant d'enregistrer.
+Vos heures sont conservées : elles ne sont pas stockées dans les fichiers de l'appli. Si la bannière n'apparaît pas tout de suite, fermez l'appli et rouvrez-la (GitHub Pages peut garder l'ancienne version en cache une dizaine de minutes).
+
+**Cas de l'icône** : Android met à jour l'icône de l'écran d'accueil de lui-même, parfois avec un délai. Sur iPhone, l'icône reste celle de l'installation. Pour la changer, il faut retirer l'appli de l'écran d'accueil et la rajouter, ce qui efface ses données : **exportez d'abord**, réinstallez, puis importez le fichier.
 
 ## À savoir
 
-- Désinstaller l'appli ou effacer les données du navigateur supprime les heures de l'appareil : gardez une sauvegarde Drive ou un fichier exporté.
-- **iPhone** : l'appli installée et Safari ont chacun leur stockage. Utilisez toujours l'icône de l'écran d'accueil. L'icône de l'écran d'accueil ne se met pas à jour sans réinstallation (sauvegardez d'abord).
-- **Tester sur ordinateur** : double-cliquez sur `apercu.bat`, l'appli s'ouvre sur `http://localhost:8000`. En aperçu local, le mode hors ligne est désactivé pour toujours voir la dernière version.
+- **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet. Exportez de temps en temps : le fichier sert aussi de sauvegarde.
+- **iPhone** : l'appli installée et Safari ont chacun leur propre stockage. Utilisez toujours l'icône de l'écran d'accueil.
+- **Google Agenda** : le bouton d'une séance ouvre Google Agenda avec l'événement pré-rempli, à confirmer. Il faut du réseau à ce moment-là. Si vous annulez une séance, retirez-la aussi de l'agenda vous-même.
+- **Tester sur ordinateur** : dans le dossier, lancez `python -m http.server 8000` puis ouvrez `http://localhost:8000`. En ouvrant `index.html` directement par double-clic, l'appli fonctionne mais le mode hors ligne n'est pas actif.
