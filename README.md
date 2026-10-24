@@ -76,5 +76,4 @@ Vos heures sont conservées : elles ne sont pas stockées dans les fichiers de l
 
 - **Sauvegarde** : désinstaller l'appli ou effacer les données du navigateur supprime le carnet du téléphone. Activez la sauvegarde automatique (section 4), ou exportez de temps en temps : le fichier sert aussi de sauvegarde.
 - **iPhone** : l'appli installée et Safari ont chacun leur propre stockage. Utilisez toujours l'icône de l'écran d'accueil.
-- **Google Agenda** : le bouton d'une séance ouvre Google Agenda avec l'événement pré-rempli, à confirmer. Il faut du réseau à ce moment-là. Si vous annulez une séance, retirez-la aussi de l'agenda vous-même.
 - **Tester sur ordinateur** : dans le dossier, lancez `python -m http.server 8000` puis ouvrez `http://localhost:8000`. En ouvrant `index.html` directement par double-clic, l'appli fonctionne mais le mode hors ligne n'est pas actif.

@@ -1,6 +1,6 @@
 /* MyHours — suivi des heures de prédication, version hors ligne.
    Toutes les données restent dans le navigateur (localStorage).
-   Les sorties à venir peuvent être envoyées vers Google Agenda, et les données sauvegardées dans Google Drive
+   Les données peuvent être sauvegardées automatiquement dans un Gist GitHub privé, dans Google Drive,
    ou dans un fichier exporté (fusionné sans rien écraser à l'import). */
 
 /* ---------- Cœur : données et fusion (sans DOM, testable) ---------- */
@@ -112,7 +112,6 @@ if (typeof document !== "undefined") (function () {
   const nowIso = () => new Date().toISOString();
   const DAY = 864e5;
   const LS = "carnet-benevolat-v1";
-  const ICO_CAL = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg>';
 
   /* Types d'activité : « Prédic » par défaut. */
   const TYPES = ["Prédic", "Étude", "Présentoir"];
@@ -330,25 +329,11 @@ if (typeof document !== "undefined") (function () {
   }
   const dateBlock = d => `<div class="date">${esc(dfWd.format(d).replace(".", ""))}<b>${d.getDate()}</b>${esc(dfMon.format(d).replace(".", ""))}</div>`;
 
-  /* Lien Google Agenda pré-rempli (sans compte configuré : un événement à confirmer à la main). */
-  function gcalUrl(p) {
-    const s = parseLocal(p.start), e = endOf(p);
-    const f = p.allDay ? d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` : d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-    const q = new URLSearchParams({ action: "TEMPLATE", text: p.title, dates: `${f(s)}/${f(e)}`, details: `${p.title} · ${dur(p.hours)} · ${state.name}` });
-    try { q.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (err) {}
-    if (p.location) q.set("location", p.location);
-    return "https://calendar.google.com/calendar/render?" + q.toString();
-  }
-  const calLink = (p, label) => `<a class="sbtn cal" data-act="gcal" href="${esc(gcalUrl(p))}" target="_blank" rel="noopener" aria-label="Ajouter à Google Agenda">${ICO_CAL}${label}</a>`;
-
-  /* ---------- Google Agenda : toutes les sorties à venir envoyées en un bouton ----------
-     API Google Agenda appelée depuis le navigateur, sans serveur. Chaque sortie a un identifiant d'événement
-     fixe, dérivé du sien : renvoyer met l'événement à jour au lieu de créer un doublon. Les sorties annulées
-     après un envoi sont notées dans calRemove et retirées de l'agenda à l'envoi suivant. */
+  /* ---------- Connexion Google (sauvegarde Drive) ----------
+     API Google appelée depuis le navigateur, sans serveur, avec l'ID client saisi dans Réglages. */
   const GCID = LS + "-gcid";
   const getGcid = () => { try { return localStorage.getItem(GCID) || ""; } catch (e) { return ""; } };
   const setGcid = v => { try { v ? localStorage.setItem(GCID, v) : localStorage.removeItem(GCID); } catch (e) {} };
-  const gEventId = id => ("mh" + id.toLowerCase().replace(/[^a-v0-9]/g, "")).padEnd(5, "0");
   let gToken = null, gTokenExp = 0;
   function loadGis() {
     if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
@@ -364,15 +349,12 @@ if (typeof document !== "undefined") (function () {
     await loadGis();
     await new Promise((ok, ko) => {
       google.accounts.oauth2.initTokenClient({
-        client_id: getGcid(), scope: "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata",
+        client_id: getGcid(), scope: "https://www.googleapis.com/auth/drive.appdata",
         callback: r => { if (r.error) { ko(new Error("Connexion Google refusée.")); return; } gToken = r.access_token; gTokenExp = Date.now() + (r.expires_in - 60) * 1000; ok(); },
         error_callback: () => ko(new Error("Connexion Google annulée."))
       }).requestAccessToken({ prompt: "" });
     });
   }
-  const gApi = (method, path, body) => fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events" + path, {
-    method, headers: { Authorization: "Bearer " + gToken, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined
-  });
   /* Sauvegarde dans Google Drive, dans le dossier caché propre à l'appli (appDataFolder) :
      un seul fichier, invisible dans le Drive, et l'appli n'a accès à rien d'autre. */
   const BACKUP = "myhours-sauvegarde.json";
@@ -417,8 +399,7 @@ if (typeof document !== "undefined") (function () {
   }
   function renderBackup() {
     let last = ""; try { last = localStorage.getItem(LASTB) || ""; } catch (e) {}
-    $("#b-hint").textContent = (last ? `Dernière sauvegarde depuis cet appareil : ${dfStamp.format(new Date(last))}. ` : "Pas encore de sauvegarde depuis cet appareil. ")
-      + "Une copie est aussi faite à chaque envoi vers Google Agenda.";
+    $("#b-hint").textContent = last ? `Dernière sauvegarde depuis cet appareil : ${dfStamp.format(new Date(last))}.` : "Pas encore de sauvegarde depuis cet appareil.";
   }
   const needGoogle = () => {
     if (!getGcid()) { toast("Ajoutez d'abord votre ID client Google dans Réglages."); openDrawer("settings"); $("#s-gcid").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); return true; }
@@ -432,42 +413,6 @@ if (typeof document !== "undefined") (function () {
     finally { btn.disabled = false; btn.textContent = orig; }
   }
 
-  function gEvent(p) {
-    const s = parseLocal(p.start), e = endOf(p);
-    let tz = "Europe/Paris"; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch (err) {}
-    const when = p.allDay ? { start: { date: ymd(s) }, end: { date: ymd(e) } } : { start: { dateTime: localIso(s), timeZone: tz }, end: { dateTime: localIso(e), timeZone: tz } };
-    return { id: gEventId(p.id), summary: p.title, location: p.location || "", description: `${p.title} · ${dur(p.hours)} · ${state.name}\nAjouté par MyHours.`, status: "confirmed", ...when };
-  }
-  async function gSync() {
-    const btn = $("#gcal-sync");
-    if (needGoogle()) return;
-    btn.disabled = true;
-    let sent = 0, removed = 0, failed = 0;
-    try {
-      await gAuth();
-      const expired = r => { if (r.status === 401) { gToken = null; throw new Error("Connexion Google expirée : touchez à nouveau le bouton."); } return r; };
-      for (const p of state.planned.filter(p => endOf(p) > new Date())) {
-        const ev = gEvent(p);
-        let r = expired(await gApi("PUT", "/" + ev.id, ev));
-        if (r.status === 404) r = expired(await gApi("POST", "", ev));
-        if (r.ok) { sent++; p.calAdded = true; } else failed++;
-      }
-      for (const id of [...state.calRemove]) {
-        const r = expired(await gApi("DELETE", "/" + gEventId(id)));
-        if (r.ok || r.status === 404 || r.status === 410) { state.calRemove = state.calRemove.filter(x => x !== id); removed++; } else failed++;
-      }
-      save();
-      const backed = await gBackup().then(() => true, () => false);
-      toast((failed ? `${failed} sortie(s) n'ont pas pu être envoyées. Réessayez.`
-        : `Google Agenda à jour : ${plural(sent, "sortie")} à venir` + (removed ? `, ${removed} retirée${removed > 1 ? "s" : ""}` : ""))
-        + (backed ? " · sauvegarde Drive faite" : " · sauvegarde Drive impossible"));
-    } catch (e) {
-      toast(e.message || "Envoi vers Google Agenda impossible.");
-    } finally {
-      save(); render();
-      btn.disabled = false;
-    }
-  }
 
   function renderTodo(c) {
     const past = state.planned.filter(p => endOf(p) <= c.now).sort((a, b) => a.start.localeCompare(b.start));
@@ -489,14 +434,12 @@ if (typeof document !== "undefined") (function () {
     const um = $("#up-month");
     um.textContent = monthH ? `${dur(monthH)} prévues en ${monthName}` : `Rien de prévu en ${monthName}`;
     um.classList.toggle("has", monthH > 0);
-    const linked = !!getGcid();
     $("#up-list").innerHTML = up.length ? up.map(p => {
       const d = parseLocal(p.start);
       return `<div class="item" data-id="${esc(p.id)}">${dateBlock(d)}
-        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}${p.calAdded ? '<span class="chip info">Dans l\'agenda</span>' : ""}</div></div>
+        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}</div></div>
         <div class="dur">${dur(p.hours)}</div>
-        <div class="acts">${linked ? "" : calLink(p, "Agenda")}
-        <button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Annuler</button></div></div>`;
+        <div class="acts"><button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Annuler</button></div></div>`;
     }).join("") : `<p class="empty">Aucune sortie prévue. Planifiez-en une ci-dessus, ou touchez un jour à venir dans le calendrier de l'onglet <b>Saisir</b>.</p>`;
   }
   function renderHistory() {
@@ -665,7 +608,6 @@ if (typeof document !== "undefined") (function () {
     const set = which === "settings";
     $("#settings").hidden = !set; $("#btn-settings").setAttribute("aria-expanded", String(set));
     if (set) {
-      $("#s-name").value = state.name === DEFAULT_NAME ? "" : state.name;
       $("#s-goal").value = state.goal;
       $("#s-gcid").value = getGcid();
       $("#s-err").hidden = true; $("#x-msg").hidden = true;
@@ -724,7 +666,6 @@ if (typeof document !== "undefined") (function () {
       err.hidden = false; $("#s-goal").focus(); return;
     }
     state.goal = Math.round(g * 2) / 2;
-    state.name = $("#s-name").value.trim() || DEFAULT_NAME;
     state.defaultHours = pickedDefault;
     setGcid($("#s-gcid").value.trim());
     if (getGcid() && navigator.onLine) loadGis().catch(() => {});
@@ -883,7 +824,7 @@ if (typeof document !== "undefined") (function () {
   }
   let quickKey = "";
   function renderDay() {
-    const k = sel, fut = isFuture(k), now = new Date(), name = dayName(k), linked = !!getGcid();
+    const k = sel, fut = isFuture(k), now = new Date(), name = dayName(k);
     $("#day-title").textContent = name;
     $("#day-sub").textContent = /^(Aujourd'hui|Hier|Demain)$/.test(name) ? dfFull.format(parseYmd(k)) : "";
     const kind = $("#day-kind");
@@ -896,10 +837,10 @@ if (typeof document !== "undefined") (function () {
     html += plans.map(p => {
       const ended = endOf(p) <= now;
       return `<div class="drow p" data-id="${esc(p.id)}"><span class="dot"></span>
-      <div class="w"><b>${dur(p.hours)}</b><span>${esc(p.title)} · ${timeLabel(p)}${ended ? " · à valider" : ""}${p.calAdded && !ended ? " · dans l'agenda" : ""}</span></div>
+      <div class="w"><b>${dur(p.hours)}</b><span>${esc(p.title)} · ${timeLabel(p)}${ended ? " · à valider" : ""}</span></div>
       <div class="acts">${ended
         ? `<input class="mini num" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" value="${p.hours}" aria-label="Heures faites"><button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button>`
-        : `${linked ? "" : calLink(p, "Agenda")}<button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Retirer</button>`}</div></div>`;
+        : `<button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Retirer</button>`}</div></div>`;
     }).join("");
     $("#day-list").innerHTML = html;
     const tot = sum(ents, e => e.hours), ptot = sum(plans, p => p.hours);
@@ -983,7 +924,6 @@ if (typeof document !== "undefined") (function () {
     addOn(sel, hrs, $("#d-note").value, isFuture(sel) ? $("#d-time").value : "");
     $("#d-time").value = ""; $("#day-more").open = false;
   });
-  $("#gcal-sync").addEventListener("click", gSync);
   $("#b-save").addEventListener("click", ev => {
     if (needGoogle()) return;
     busy(ev.currentTarget, "Sauvegarde…", async () => { await gBackup(); toast("Sauvegarde Google Drive faite"); });
@@ -1047,11 +987,6 @@ if (typeof document !== "undefined") (function () {
     }
     const row = btn.closest("[data-id]"); if (!row) return;
     const id = row.dataset.id, p = state.planned.find(x => x.id === id); if (!p) return;
-    if (act === "gcal") {
-      if (!navigator.onLine) toast("Pas de réseau : Google Agenda s'ouvrira dès que vous serez connecté.");
-      if (!p.calAdded) { p.calAdded = true; p.updated = nowIso(); commit(); }
-      return; // le lien s'ouvre normalement
-    }
     if (act === "validate") {
       const v = parseFloat(row.querySelector("input.mini").value);
       if (!(v > 0)) { toast("Indiquez les heures effectuées."); return; }
@@ -1062,11 +997,8 @@ if (typeof document !== "undefined") (function () {
     } else if (act === "skip" || act === "cancel") {
       if (!armed(btn)) return;
       state.planned = state.planned.filter(x => x.id !== id); tomb(id);
-      const inCal = act === "cancel" && p.calAdded && getGcid();
-      if (inCal) state.calRemove.push(id);
       commit();
-      if (inCal) { toast("Sortie annulée. Elle sera retirée de Google Agenda au prochain envoi."); return; }
-      toast(act === "skip" ? "Sortie retirée du suivi" : (p.calAdded ? "Sortie annulée. Pensez à la retirer aussi de votre agenda." : "Sortie annulée"));
+      toast(act === "skip" ? "Sortie retirée du suivi" : "Sortie annulée");
     }
   });
 
