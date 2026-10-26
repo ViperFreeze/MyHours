@@ -94,7 +94,6 @@ if (typeof document !== "undefined") (function () {
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const parseYmd = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const parseLocal = s => { const [a, b = "00:00"] = s.split("T"); const [y, m, d] = a.split("-").map(Number); const [h, mi] = b.split(":").map(Number); return new Date(y, m - 1, d, h || 0, mi || 0); };
-  const localIso = d => `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
   const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
   const num = h => nf.format(Math.round(h * 10) / 10);
   const dur = h => { const t = Math.round(h * 60), H = Math.floor(t / 60), M = t % 60; return H ? (M ? `${H} h ${pad(M)}` : `${H} h`) : `${M} min`; };
@@ -128,6 +127,7 @@ if (typeof document !== "undefined") (function () {
     try { localStorage.setItem(LS, JSON.stringify(state)); storageOk = true; }
     catch (e) { storageOk = false; }
     scheduleBackup();
+    syncReminders();
   }
   function commit() { state.changes = (state.changes || 0) + 1; save(); render(); }
 
@@ -309,7 +309,7 @@ if (typeof document !== "undefined") (function () {
     if (c.status && map[c.status]) { st.className = "chip " + map[c.status][0]; st.textContent = map[c.status][1]; }
     else { st.className = "chip"; st.textContent = `${Math.round(c.pct)} %`; }
     renderCells(c);
-    renderTodo(c); renderUpcoming(c); renderHistory(); renderStats(c); renderCal(); renderDay(); renderReset(); renderSyncState(); updatePreview();
+    renderTodo(c); renderStats(c); renderCal(); renderDay(); renderReset(); renderSyncState(); renderNotif();
   }
   function renderCells(c) {
     const goal = state.goal;
@@ -426,40 +426,6 @@ if (typeof document !== "undefined") (function () {
         <button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button></div></div>`;
     }).join("");
   }
-  function renderUpcoming(c) {
-    const up = state.planned.filter(p => endOf(p) > c.now).sort((a, b) => a.start.localeCompare(b.start));
-    // Total des heures prévues sur le mois en cours (du 1er au dernier jour du mois).
-    const monthKey = ymd(c.now).slice(0, 7), monthName = dfMonth.format(c.now).split(" ")[0];
-    const monthH = sum(state.planned.filter(p => p.start.slice(0, 7) === monthKey), p => p.hours);
-    const um = $("#up-month");
-    um.textContent = monthH ? `${dur(monthH)} prévues en ${monthName}` : `Rien de prévu en ${monthName}`;
-    um.classList.toggle("has", monthH > 0);
-    $("#up-list").innerHTML = up.length ? up.map(p => {
-      const d = parseLocal(p.start);
-      return `<div class="item" data-id="${esc(p.id)}">${dateBlock(d)}
-        <div class="what"><div class="t">${esc(p.title)}</div><div class="s"><span>${timeLabel(p)}</span>${p.location ? `<span>${esc(p.location)}</span>` : ""}</div></div>
-        <div class="dur">${dur(p.hours)}</div>
-        <div class="acts"><button class="sbtn del" data-act="cancel" data-confirm="Confirmer">Annuler</button></div></div>`;
-    }).join("") : `<p class="empty">Aucune sortie prévue. Planifiez-en une ci-dessus, ou touchez un jour à venir dans le calendrier de l'onglet <b>Saisir</b>.</p>`;
-  }
-  function renderHistory() {
-    const e = [...state.entries].sort((a, b) => b.date.localeCompare(a.date) || String(b.created || "").localeCompare(String(a.created || "")));
-    if (!e.length) { $("#hist-list").innerHTML = `<p class="empty">Aucune heure saisie pour l'instant. Ajoutez votre première sortie dans l'onglet <b>Saisir</b>.</p>`; return; }
-    const groups = {};
-    e.forEach(x => { (groups[x.date.slice(0, 7)] = groups[x.date.slice(0, 7)] || []).push(x); });
-    let html = "";
-    Object.keys(groups).sort().reverse().forEach(k => {
-      const [y, m] = k.split("-").map(Number);
-      html += `<div class="month"><span>${esc(dfMonth.format(new Date(y, m - 1, 1)))}</span><span class="num">${num(sum(groups[k], x => x.hours))} h</span></div>`;
-      groups[k].forEach(x => {
-        html += `<div class="item" data-eid="${esc(x.id)}">${dateBlock(parseYmd(x.date))}
-          <div class="what"><div class="t">${esc(TYPES.includes(x.note) ? x.note : (x.note || DEFAULT_TYPE))}</div><div class="s">${x.source === "planning" ? '<span class="chip info">Prévue</span>' : ""}</div></div>
-          <div class="dur">${dur(x.hours)}</div>
-          <div class="acts"><button class="sbtn del" data-act="del-entry" data-confirm="Confirmer la suppression">Supprimer</button></div></div>`;
-      });
-    });
-    $("#hist-list").innerHTML = html;
-  }
   function renderStats(c) {
     const e = state.entries, now = c.now;
     const avg = e.length ? sum(e, x => x.hours) / e.length : 0;
@@ -545,7 +511,7 @@ if (typeof document !== "undefined") (function () {
   });
 
   /* ---------- onglets ---------- */
-  const TABS = ["log", "plan", "stats", "hist"];
+  const TABS = ["log", "stats"];
   function showTab(t) {
     TABS.forEach(k => { $("#t-" + k).setAttribute("aria-selected", String(k === t)); $("#p-" + k).hidden = k !== t; });
     try { localStorage.setItem(LS + "-tab", t); } catch (e) {}
@@ -612,7 +578,7 @@ if (typeof document !== "undefined") (function () {
       $("#s-gcid").value = getGcid();
       $("#s-err").hidden = true; $("#x-msg").hidden = true;
       setDefaultChips(state.defaultHours);
-      updateSettingsSum(); renderBackup(); renderSyncState(); disarmReset(); renderReset(); renderStatus();
+      updateSettingsSum(); renderBackup(); renderSyncState(); disarmReset(); renderReset(); renderStatus(); renderNotif();
     }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
@@ -942,32 +908,6 @@ if (typeof document !== "undefined") (function () {
   if (getGcid() && navigator.onLine) loadGis().catch(() => {});
   $("#q-edit").addEventListener("click", () => { openDrawer("settings"); window.scrollTo({ top: 0, behavior: "smooth" }); focusDefaultChip(); });
 
-  /* ---------- planification (sorties répétées) ---------- */
-  $("#p-date").value = ymd(new Date(Date.now() + DAY));
-  function updatePreview() {
-    const hrs = parseFloat($("#p-hours").value) || 0, n = +$("#p-repeat").value || 1, c = calc();
-    const add = hrs * n, after = Math.max(0, state.goal - c.done - c.plannedH - add);
-    $("#p-preview").innerHTML = hrs > 0
-      ? `${n > 1 ? `${n} sorties de ${dur(hrs)} = ` : ""}<b>${dur(add)}</b> prévues. Pour ce mois-ci, il resterait ensuite <b>${num(after)} h</b> à organiser${after === 0 ? " : objectif couvert" : ""}.`
-      : "Indiquez une durée.";
-    $("#p-submit").textContent = n > 1 ? `Planifier ${n} sorties` : "Planifier la sortie";
-  }
-  ["#p-hours", "#p-repeat"].forEach(s => $(s).addEventListener("input", updatePreview));
-  $("#f-plan").addEventListener("submit", ev => {
-    ev.preventDefault();
-    const title = $("#p-title").value || DEFAULT_TYPE, date = $("#p-date").value, time = $("#p-time").value, hrs = parseFloat($("#p-hours").value);
-    const loc = $("#p-loc").value.trim(), n = +$("#p-repeat").value || 1;
-    if (!date || !time || !(hrs > 0)) { toast("Indiquez une date, une heure de début et une durée."); return; }
-    const t = nowIso();
-    for (let i = 0; i < n; i++) {
-      const start = parseLocal(date + "T" + time); start.setDate(start.getDate() + 7 * i);
-      state.planned.push({ id: uid(), title, start: localIso(start), hours: Math.round(hrs * 100) / 100, location: loc, created: t, updated: t });
-    }
-    $("#p-repeat").value = "1";
-    commit();
-    toast(n > 1 ? `${n} sorties « ${title} » planifiées` : `${title} planifiée le ${dfFull.format(parseLocal(date + "T" + time))}`);
-  });
-
   /* ---------- actions des listes (confirmation dans la page) ---------- */
   function armed(btn) {
     if (!btn.dataset.confirm || btn.dataset.armed === "1") return true;
@@ -1002,6 +942,99 @@ if (typeof document !== "undefined") (function () {
     }
   });
 
+  /* ---------- rappels : sortie prévue terminée mais pas validée ----------
+     Pas de serveur, donc pas de vrai « push » distant : les notifications sont locales.
+     La liste des rappels est copiée dans le cache, où le service worker peut la lire :
+     - appli ouverte ou en arrière-plan : minuterie jusqu'à l'échéance ;
+     - appli fermée (Android, appli installée) : vérification périodique en arrière-plan ;
+     - dans tous les cas : vérification à chaque ouverture. */
+  const REMIND_AFTER = 30 * 60 * 1000; // délai après la fin prévue de la sortie
+  const REM_CACHE = "myhours-data", REM_KEY = "./__reminders.json";
+  const NOTIF_PREF = LS + "-notif";
+  const isLocal = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
+  const notifSupported = "Notification" in window && "serviceWorker" in navigator && "caches" in window && !isLocal;
+  const notifWanted = () => { try { return localStorage.getItem(NOTIF_PREF) === "on"; } catch (e) { return false; } };
+  const notifOn = () => notifSupported && notifWanted() && Notification.permission === "granted";
+  let remTimer = null;
+
+  function renderNotif() {
+    const st = $("#n-state"), btn = $("#n-btn");
+    if (!st) return;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const inApp = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    if (!notifSupported) {
+      btn.hidden = true;
+      st.textContent = isLocal ? "Les rappels ne marchent pas en aperçu local : testez-les depuis l'adresse GitHub Pages."
+        : ios && !inApp ? "Sur iPhone, installez d'abord l'appli sur l'écran d'accueil (iOS 16.4 ou plus), puis activez les rappels depuis l'icône."
+        : "Ce navigateur ne gère pas les notifications.";
+      return;
+    }
+    btn.hidden = false;
+    if (Notification.permission === "denied") { btn.hidden = true; st.textContent = "Notifications bloquées : autorisez-les pour MyHours dans les réglages du téléphone ou du navigateur."; }
+    else if (notifOn()) { st.textContent = "Activés : une notification arrive 30 minutes après une sortie prévue qui n'a pas été validée."; btn.textContent = "Désactiver les rappels"; }
+    else { st.textContent = "Une notification si une sortie prévue est terminée depuis 30 minutes sans avoir été validée."; btn.textContent = "Activer les rappels"; }
+  }
+
+  async function syncReminders() {
+    if (!notifSupported) return;
+    const enabled = notifOn();
+    const items = state.planned.map(p => {
+      const s = parseLocal(p.start);
+      return { id: p.id, title: p.title || DEFAULT_TYPE, due: endOf(p).getTime() + REMIND_AFTER, when: p.allDay ? dfDM.format(s) : `${dfDM.format(s)} à ${timeLabel(p)}`, hours: dur(p.hours) };
+    });
+    try {
+      const cache = await caches.open(REM_CACHE);
+      const old = await cache.match(REM_KEY);
+      const prev = old ? await old.json() : {};
+      const notified = {};
+      for (const it of items) if (prev.notified && prev.notified[it.id]) notified[it.id] = prev.notified[it.id];
+      await cache.put(REM_KEY, new Response(JSON.stringify({ enabled, items, notified }), { headers: { "Content-Type": "application/json" } }));
+      // Sortie validée ou annulée : sa notification encore affichée disparaît.
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) (await reg.getNotifications()).forEach(n => { if (n.tag && !items.some(i => i.id === n.tag)) n.close(); });
+    } catch (e) {}
+    clearTimeout(remTimer);
+    if (!enabled) return;
+    askReminderCheck();
+    const next = items.map(i => i.due).filter(d => d > Date.now()).sort((a, b) => a - b)[0];
+    if (next && next - Date.now() < 2 ** 31 - 1) remTimer = setTimeout(() => { render(); askReminderCheck(); }, next - Date.now() + 1000);
+  }
+  function askReminderCheck() {
+    navigator.serviceWorker.ready.then(reg => { if (reg.active) reg.active.postMessage({ type: "check-reminders" }); }).catch(() => {});
+  }
+  async function registerPeriodic() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (!("periodicSync" in reg)) return;
+      const perm = await navigator.permissions.query({ name: "periodic-background-sync" });
+      if (perm.state === "granted") await reg.periodicSync.register("myhours-reminders", { minInterval: 60 * 60 * 1000 });
+    } catch (e) {}
+  }
+  $("#n-btn").addEventListener("click", async () => {
+    if (!notifSupported) return;
+    if (notifOn()) {
+      try { localStorage.setItem(NOTIF_PREF, "off"); } catch (e) {}
+      try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.unregister("myhours-reminders"); } catch (e) {}
+      renderNotif(); syncReminders(); toast("Rappels désactivés"); return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") { try { perm = await Notification.requestPermission(); } catch (e) {} }
+    if (perm !== "granted") { renderNotif(); toast("Notifications refusées : les rappels restent désactivés."); return; }
+    try { localStorage.setItem(NOTIF_PREF, "on"); } catch (e) {}
+    await registerPeriodic();
+    renderNotif(); syncReminders(); toast("Rappels activés");
+  });
+
+  // Ouverture depuis une notification : on montre les sorties à valider.
+  function focusTodo() {
+    showTab("log");
+    const box = $("#todo-box");
+    if (box.hidden) return;
+    box.classList.add("alert");
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => box.classList.remove("alert"), 2500);
+  }
+
   /* ---------- hors ligne, installation, mises à jour ---------- */
   const setOnline = () => { $("#offline").hidden = navigator.onLine; };
   window.addEventListener("online", setOnline); window.addEventListener("offline", setOnline); setOnline();
@@ -1033,10 +1066,15 @@ if (typeof document !== "undefined") (function () {
   if ("serviceWorker" in navigator && !local) {
     const hadController = !!navigator.serviceWorker.controller;
     const showUpdate = () => { $("#update").hidden = false; };
-    navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "update-available") showUpdate(); });
+    navigator.serviceWorker.addEventListener("message", e => {
+      if (!e.data) return;
+      if (e.data.type === "update-available") showUpdate();
+      if (e.data.type === "open-todo") { state = load(); render(); focusTodo(); }
+    });
     navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) showUpdate(); });
     $("#update-btn").addEventListener("click", () => location.reload());
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+      if (notifOn()) registerPeriodic();
       // L'appli peut rester ouverte en arrière-plan des jours : on revérifie à chaque retour au premier plan.
       document.addEventListener("visibilitychange", () => {
         if (document.hidden || !navigator.onLine) return;
@@ -1053,10 +1091,14 @@ if (typeof document !== "undefined") (function () {
     state = load();
     const t = ymd(new Date());
     if (t !== lastDay) { if (sel === lastDay) { sel = t; const d = new Date(); view = new Date(d.getFullYear(), d.getMonth(), 1); } lastDay = t; }
-    render();
+    render(); syncReminders();
   });
   window.addEventListener("storage", e => { if (e.key === LS) { state = load(); render(); } });
 
   save(); render();
+  if (new URLSearchParams(location.search).has("valider")) {
+    history.replaceState(null, "", location.pathname);
+    setTimeout(focusTodo, 300);
+  }
   ghSoon(1500); // à l'ouverture : récupérer ce qui a changé en ligne, puis envoyer ce qui manque
 })();

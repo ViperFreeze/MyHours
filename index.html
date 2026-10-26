@@ -129,12 +129,13 @@ a{color:var(--accent)}
 .dangerbtn:disabled{opacity:.45;cursor:default}
 
 /* Tabs */
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.tabs{display:grid;grid-template-columns:repeat(2,1fr);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
 .tab{border:0;background:none;padding:9px 4px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer;color:var(--muted)}
 .tab[aria-selected="true"]{background:var(--ink);color:var(--bg)}
 .panel{display:flex;flex-direction:column;gap:16px}
 .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
 .box h2{font-size:18px;font-stretch:90%;font-weight:700}
+.box.alert{border-color:var(--plan);box-shadow:0 0 0 3px var(--plan-soft)}
 .box .hint{color:var(--muted);font-size:13px;margin-top:-8px}
 
 /* Forms */
@@ -299,6 +300,12 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="row"><button type="button" class="secondary" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
 
       <div class="sect">
+        <h2>Rappels de validation</h2>
+        <p class="rhint" id="n-state">Une notification si une sortie prévue est terminée depuis 30 minutes sans avoir été validée.</p>
+        <div class="rrow"><button type="button" class="secondary" id="n-btn">Activer les rappels</button></div>
+      </div>
+
+      <div class="sect">
         <h2>Sauvegarde automatique</h2>
         <p class="rhint">Après chaque modification, une copie de toutes vos données part dans un Gist privé de votre compte GitHub, qui garde l'historique des versions. Sur un nouveau téléphone, collez le même jeton : la sauvegarde est retrouvée et fusionnée.</p>
         <div class="rrow" id="gh-setup">
@@ -359,18 +366,10 @@ svg .val{fill:var(--ink);font-weight:500}
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button class="tab" role="tab" id="t-log" aria-controls="p-log" aria-selected="true">Saisir</button>
-    <button class="tab" role="tab" id="t-plan" aria-controls="p-plan" aria-selected="false">Planifier</button>
     <button class="tab" role="tab" id="t-stats" aria-controls="p-stats" aria-selected="false">Stats</button>
-    <button class="tab" role="tab" id="t-hist" aria-controls="p-hist" aria-selected="false">Historique</button>
   </nav>
 
   <section class="panel" id="p-log" role="tabpanel" aria-labelledby="t-log">
-    <div class="box" id="todo-box" hidden>
-      <h2>Sorties passées à valider</h2>
-      <p class="hint">Ces sorties prévues sont passées. Validez-les pour les compter.</p>
-      <div class="list" id="todo-list"></div>
-    </div>
-
     <section class="box cal" aria-labelledby="cal-month">
       <div class="cal-head">
         <button type="button" class="navbtn" id="cal-prev" aria-label="Mois précédent">&#8249;</button>
@@ -407,38 +406,14 @@ svg .val{fill:var(--ink);font-weight:500}
       </details>
       <button type="button" class="linkbtn" id="q-edit">Changer la durée par défaut</button>
     </section>
-  </section>
 
-  <section class="panel" id="p-plan" role="tabpanel" aria-labelledby="t-plan" hidden>
-    <form class="box" id="f-plan">
-      <h2>Planifier une sortie</h2>
-      <p class="hint">Les sorties prévues comptent comme « prévues » jusqu'à ce que vous les validiez. Pratique pour une sortie qui revient chaque semaine.</p>
-      <div class="field"><label for="p-title">Type</label><select id="p-title" class="type-select"></select></div>
-      <div class="three">
-        <div class="field wide"><label for="p-date">Date</label><input id="p-date" type="date" required></div>
-        <div class="field"><label for="p-time">Début</label><input id="p-time" type="time" required value="14:00"></div>
-        <div class="field"><label for="p-hours">Durée (h)</label><input id="p-hours" type="number" min="0.25" max="24" step="0.25" inputmode="decimal" required value="2"></div>
-      </div>
-      <div class="chips" data-for="p-hours"></div>
-      <div class="two">
-        <div class="field"><label for="p-loc">Lieu (facultatif)</label><input id="p-loc" maxlength="160" placeholder="Adresse ou point de rendez-vous"></div>
-        <div class="field"><label for="p-repeat">Répéter chaque semaine</label>
-          <select id="p-repeat">
-            <option value="1">Une seule fois</option>
-            <option value="2">2 semaines</option><option value="3">3 semaines</option><option value="4">4 semaines</option>
-            <option value="5">5 semaines</option><option value="6">6 semaines</option><option value="8">8 semaines</option>
-            <option value="10">10 semaines</option><option value="12">12 semaines</option>
-          </select>
-        </div>
-      </div>
-      <div class="preview" id="p-preview"></div>
-      <button class="primary" type="submit" id="p-submit">Planifier la sortie</button>
-    </form>
-    <div class="box">
-      <div class="quick-head"><h2>Sorties à venir</h2><span class="today-tot num" id="up-month">Rien de prévu ce mois-ci</span></div>
-      <div class="list" id="up-list"></div>
+    <div class="box" id="todo-box" hidden>
+      <h2>Sorties passées à valider</h2>
+      <p class="hint">Ces sorties prévues sont passées. Validez-les pour les compter.</p>
+      <div class="list" id="todo-list"></div>
     </div>
   </section>
+
 
   <section class="panel" id="p-stats" role="tabpanel" aria-labelledby="t-stats" hidden>
     <div class="box"><h2>Vue d'ensemble</h2><div class="kpis" id="kpis"></div></div>
@@ -446,9 +421,6 @@ svg .val{fill:var(--ink);font-weight:500}
     <div class="box"><h2>Jours de la semaine</h2><div id="weekdays" style="display:flex;flex-direction:column;gap:8px"></div></div>
   </section>
 
-  <section class="panel" id="p-hist" role="tabpanel" aria-labelledby="t-hist" hidden>
-    <div class="box"><h2>Historique</h2><div class="list" id="hist-list"></div></div>
-  </section>
 
   <div class="status" id="status"><span id="status-text">Données enregistrées sur cet appareil.</span> <button type="button" class="status-link" id="quick-save">Sauvegarder</button></div>
 </div>

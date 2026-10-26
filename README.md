@@ -8,7 +8,7 @@ MyHours est une appli web installable (PWA) pour suivre vos heures de bénévola
 |---|---|
 | `index.html` | L'interface |
 | `app.js` | Le fonctionnement (calculs, stockage, export/import) |
-| `sw.js` | Le service worker qui met l'appli en cache pour le hors ligne |
+| `sw.js` | Le service worker : cache hors ligne et notifications de rappel |
 | `manifest.webmanifest` | Nom, couleurs et icônes pour l'installation |
 | `icons/` | Le logo MyHours (`logo-mark.png`, plus `logo-full.png` comme image source) et les icônes d'installation générées à partir de lui |
 
@@ -60,7 +60,19 @@ Le jeton reste sur le téléphone : il n'est jamais dans la sauvegarde ni dans u
 - **Nouveau téléphone ou réinstallation** : collez le même jeton, la sauvegarde est retrouvée et fusionnée avec ce qui est sur l'appareil. Rien n'est écrasé.
 - **Retrouver une ancienne version** : sur gist.github.com, ouvrez le Gist « MyHours – sauvegarde automatique », onglet **Revisions**.
 
-## 5. Modifier l'appli sans la réinstaller
+## 5. Rappels de validation
+
+Quand une sortie prévue est terminée depuis 30 minutes sans avoir été validée, MyHours envoie une notification. La toucher ouvre l'appli sur les sorties à valider.
+
+Pour les activer : **Réglages → Rappels de validation → Activer les rappels**, puis acceptez les notifications. À faire sur chaque appareil.
+
+Il n'y a pas de serveur : ce sont des notifications locales, et leur fiabilité dépend du téléphone.
+
+- **Android, appli installée** : elles arrivent aussi appli fermée, mais Chrome choisit le moment de la vérification (en général toutes les quelques heures).
+- **iPhone (iOS 16.4 ou plus, appli installée)** : la notification part quand l'appli est ouverte ou en arrière-plan. Appli complètement fermée, le rappel s'affiche à la prochaine ouverture.
+- **Aperçu local** (`apercu.bat`) : pas de rappels, testez depuis l'adresse GitHub Pages.
+
+## 6. Modifier l'appli sans la réinstaller
 
 Inutile de désinstaller : l'appli se met à jour toute seule.
 
