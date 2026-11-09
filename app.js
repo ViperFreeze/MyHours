@@ -172,7 +172,8 @@ if (typeof document !== "undefined") (function () {
   const cloudPending = () => { const s = clGet(); return !!s.uid && s.sig !== dataSig(); };
   const offlineError = () => Object.assign(new Error("Pas de réseau : la synchronisation reprendra dès le retour de la connexion."), { offline: true });
 
-  let fb = null, fbLoading = null, user = null, authReady = false;
+  let fb = null, fbLoading = null, user = null, authReady = false, deleting = false;
+  let pendingConsent = ""; // date de l'accord donné juste avant la connexion
   function loadFirebase() {
     if (!fbReady) return Promise.reject(new Error("La synchronisation n'est pas encore configurée sur ce site."));
     if (!fbLoading) fbLoading = (async () => {
@@ -207,7 +208,9 @@ if (typeof document !== "undefined") (function () {
     }
     user = u;
     // Premier lien avec ce compte : les heures déjà sur l'appareil seront fusionnées dans le compte.
-    clSet({ uid: u.uid, email: u.email || "", error: "" });
+    clSet({ uid: u.uid, email: u.email || "", error: "", consentAt: pendingConsent || (meta.uid === u.uid && meta.consentAt) || "" });
+    pendingConsent = "";
+    $("#acc-consent").checked = false; // à recocher pour une prochaine connexion sur ce téléphone
     accMsg("");
     renderAccount(); cloudSoon(200);
   }
@@ -229,14 +232,17 @@ if (typeof document !== "undefined") (function () {
     if (clBusy) return clBusy;
     clBusy = (async () => {
       if (!user) throw new Error("Connectez-vous pour synchroniser.");
+      if (deleting) throw new Error("Suppression du compte en cours.");
       if (!navigator.onLine) throw offlineError();
       const { m, db } = fb, ref = m.doc(db, "users", user.uid), uidAtStart = user.uid;
       const result = await withTimeout(m.runTransaction(db, async tx => {
         const snap = await tx.get(ref);
         const remote = snap.exists() && snap.data().data ? normalize(snap.data().data) : null;
+        // Date de l'accord à la politique de confidentialité, gardée avec les données.
+        const consentAt = clGet().consentAt || (snap.exists() && snap.data().consentAt) || null;
         const merged = remote ? merge(state, remote).merged : normalize(state);
         if (!remote || signature(remote) !== signature(merged)) {
-          tx.set(ref, { app: "myhours", format: 1, data: CarnetCore.canonical(merged), updatedAt: m.serverTimestamp() });
+          tx.set(ref, { app: "myhours", format: 1, consentAt, data: CarnetCore.canonical(merged), updatedAt: m.serverTimestamp() });
         }
         return merged;
       }), 25000);
@@ -294,7 +300,10 @@ if (typeof document !== "undefined") (function () {
     $("#acc-off").hidden = fbReady;
     $("#acc-out").hidden = !fbReady || !!user;
     $("#acc-in").hidden = !user;
-    if (user) $("#acc-who").textContent = user.email || "compte connecté";
+    if (user) {
+      $("#acc-who").textContent = user.email || "compte connecté";
+      $("#acc-del-pass-f").hidden = !isPasswordAccount();
+    }
     renderStatus(); renderSyncState();
   }
   function authError(e) {
@@ -323,8 +332,18 @@ if (typeof document !== "undefined") (function () {
     btn.dataset.armed = "0"; btn.disabled = true; btn.textContent = label;
     try { await fn(); } finally { btn.disabled = false; btn.textContent = orig; }
   }
+  /* Les heures de prédication peuvent révéler une conviction religieuse (donnée sensible au sens du RGPD) :
+     on demande un accord explicite avant de les enregistrer dans un compte. */
+  function needConsent() {
+    if ($("#acc-consent").checked) { pendingConsent = nowIso(); return false; }
+    accMsg("Cochez d'abord la case d'accord pour enregistrer vos heures dans un compte.");
+    $("#acc-consent").focus();
+    return true;
+  }
+  $("#acc-consent").addEventListener("change", () => accMsg(""));
   $("#acc-google").addEventListener("click", ev => {
     accMsg("");
+    if (needConsent()) return;
     if (!navigator.onLine) { accMsg("Pas de réseau : réessayez une fois connecté."); return; }
     // La fenêtre Google doit s'ouvrir directement dans le clic, sinon le navigateur la bloque :
     // Firebase est donc déjà chargé à l'ouverture de l'appli.
@@ -343,6 +362,7 @@ if (typeof document !== "undefined") (function () {
     accMsg("");
     const c = readCreds(); if (!c) return;
     if (!c.pass) { accMsg("Indiquez un mot de passe."); $("#acc-pass").focus(); return; }
+    if (needConsent()) return;
     if (!navigator.onLine) { accMsg("Pas de réseau : réessayez une fois connecté."); return; }
     await withBtn(btn, create ? "Création…" : "Connexion…", async () => {
       try {
@@ -377,6 +397,74 @@ if (typeof document !== "undefined") (function () {
       try { localStorage.removeItem(CLOUD); } catch (e) {}
       state = blankState(); save(); render(); renderAccount();
       toast("Déconnecté. Vos heures restent dans votre compte.");
+    });
+  });
+
+  const isPasswordAccount = () => !!(user && user.providerData && user.providerData.some(p => p.providerId === "password"));
+
+  /* Télécharger mes données : tout le carnet (après une dernière synchro) et les informations du compte,
+     dans un fichier JSON que « Importer » sait relire. */
+  $("#acc-dl").addEventListener("click", async ev => {
+    accMsg("");
+    await withBtn(ev.currentTarget, "Préparation…", async () => {
+      if (user && navigator.onLine) { try { await cloudSync(); } catch (e) {} }
+      const meta = clGet();
+      const payload = {
+        ...exportPayload(state),
+        compte: user ? {
+          email: user.email || "",
+          identifiant: user.uid,
+          connexion: (user.providerData || []).map(p => p.providerId === "google.com" ? "Google" : p.providerId === "password" ? "e-mail et mot de passe" : p.providerId),
+          nom: user.displayName || "",
+          creeLe: (user.metadata && user.metadata.creationTime) || "",
+          derniereConnexion: (user.metadata && user.metadata.lastSignInTime) || "",
+          accordConfidentialite: meta.consentAt || "",
+          derniereSynchro: meta.last || ""
+        } : null
+      };
+      try {
+        const name = await shareJson(payload, `myhours-mes-donnees-${ymd(new Date())}.json`);
+        if (name) accMsg(`Fichier « ${name} » créé : il contient toutes vos heures et les informations de votre compte.`, true);
+      } catch (e) { accMsg(e.message); }
+    });
+  });
+
+  /* Supprimer mon compte : Firebase exige une connexion récente, on redemande donc l'identité
+     (fenêtre Google ou mot de passe), puis on efface le document des heures, le compte, et ce téléphone. */
+  $("#acc-del").addEventListener("click", ev => {
+    const btn = ev.currentTarget;
+    accMsg("");
+    if (!user || !fb) return;
+    if (!navigator.onLine) { accMsg("Pas de réseau : la suppression demande une connexion."); return; }
+    const pass = $("#acc-del-pass").value;
+    if (isPasswordAccount() && !pass) { accMsg("Indiquez votre mot de passe pour confirmer la suppression."); $("#acc-del-pass").focus(); return; }
+    if (!armed(btn)) return;
+    const { m, auth, db } = fb, u = auth.currentUser;
+    // Appelé directement dans le clic, pour que la fenêtre Google ne soit pas bloquée.
+    const reauth = isPasswordAccount()
+      ? m.reauthenticateWithCredential(u, m.EmailAuthProvider.credential(u.email, pass))
+      : m.reauthenticateWithPopup(u, new m.GoogleAuthProvider());
+    withBtn(btn, "Suppression…", async () => {
+      try { await reauth; }
+      catch (e) { accMsg(e && e.code === "auth/user-mismatch" ? "Choisissez le même compte Google que celui connecté." : authError(e)); return; }
+      deleting = true; clearTimeout(clTimer);
+      try {
+        if (clBusy) { try { await clBusy; } catch (e) {} }
+        await m.deleteDoc(m.doc(db, "users", u.uid));
+        await m.deleteUser(u);
+      } catch (e) {
+        deleting = false;
+        accMsg("La suppression n'a pas pu aller au bout : " + (e && e.code ? authError(e) : cloudError(e).message) + " Vos heures sont toujours sur ce téléphone.");
+        cloudSoon(1000);
+        return;
+      }
+      deleting = false;
+      $("#acc-del-pass").value = ""; $("#acc-del-box").open = false;
+      try { localStorage.removeItem(CLOUD); } catch (e) {}
+      user = null;
+      state = blankState(); save(); render(); renderAccount();
+      accMsg("Votre compte et toutes vos heures ont été supprimés.", true);
+      toast("Compte supprimé");
     });
   });
 
@@ -704,11 +792,16 @@ if (typeof document !== "undefined") (function () {
     const last = state.lastSync ? `Dernier export ou import : ${dfStamp.format(new Date(state.lastSync))}.` : "Aucun export pour l'instant.";
     $("#x-state").textContent = `${last} ${ch ? `${plural(ch, "modification")} depuis.` : "Rien de nouveau depuis."}`;
   }
-  /* Crée le fichier de sauvegarde (menu de partage sur mobile, téléchargement sinon).
-     Renvoie le nom du fichier, ou null si l'utilisateur a fermé le menu de partage. */
   async function exportFile() {
-    const json = JSON.stringify(exportPayload(state), null, 2);
-    const name = `myhours-${ymd(new Date())}.json`;
+    const name = await shareJson(exportPayload(state), `myhours-${ymd(new Date())}.json`);
+    if (!name) return null;
+    state.lastSync = nowIso(); state.changes = 0; save(); render();
+    return name;
+  }
+  /* Crée un fichier JSON (menu de partage sur mobile, téléchargement sinon).
+     Renvoie le nom du fichier, ou null si l'utilisateur a fermé le menu de partage. */
+  async function shareJson(obj, name) {
+    const json = JSON.stringify(obj, null, 2);
     let file = null;
     try { file = new File([json], name, { type: "application/json" }); } catch (e) {}
     try {
@@ -722,9 +815,8 @@ if (typeof document !== "undefined") (function () {
       }
     } catch (e) {
       if (e && e.name === "AbortError") return null;
-      throw new Error("L'export n'a pas pu être envoyé. Réessayez, ou utilisez un autre navigateur.");
+      throw new Error("Le fichier n'a pas pu être créé. Réessayez, ou utilisez un autre navigateur.");
     }
-    state.lastSync = nowIso(); state.changes = 0; save(); render();
     return name;
   }
   $("#x-export").addEventListener("click", async () => {

@@ -25,9 +25,13 @@
   }
 })();
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+/* Polices hébergées avec l'appli (aucune requête vers Google Fonts), sous licence SIL Open Font License. */
+@font-face{font-family:"Archivo";font-style:normal;font-display:swap;font-weight:100 900;font-stretch:62% 125%;src:url(fonts/archivo.woff2) format("woff2-variations");}
+@font-face{font-family:"Public Sans";font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/public-sans.woff2) format("woff2-variations");}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-display:swap;font-weight:400;src:url(fonts/ibm-plex-mono-400.woff2) format("woff2");}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-display:swap;font-weight:500;src:url(fonts/ibm-plex-mono-500.woff2) format("woff2");}
+</style>
 <style>
 /* Layout: one mobile-first column; the monthly time card leads, tabs below for log (calendar) / plan / stats / history. */
 :root{
@@ -125,6 +129,10 @@ a{color:var(--accent)}
 .sect .rrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 .sect .rrow .field{flex:1;min-width:180px}
 #acc > div:not([hidden]){display:flex;flex-direction:column;gap:10px}
+.consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted);cursor:pointer}
+.consent input{width:18px;height:18px;margin:1px 0 0;flex:none;accent-color:var(--accent)}
+.consent a,.legal a{color:var(--accent)}
+.legal{grid-column:1/-1;margin:4px 0 0;font-size:13px;text-align:center}
 .acc-mail[open]{display:flex;flex-direction:column;gap:10px}
 .dangerbtn{background:var(--surface);color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:42px}
 .dangerbtn[data-armed="1"]{background:var(--danger);color:var(--surface)}
@@ -307,6 +315,7 @@ svg .val{fill:var(--ink);font-weight:500}
         </div>
         <div id="acc-out" hidden>
           <p class="rhint">Connectez-vous pour que vos heures soient sauvegardées automatiquement et retrouvées sur tous vos appareils. Sans compte, elles restent seulement sur ce téléphone. Les heures déjà saisies ici sont ajoutées à votre compte.</p>
+          <label class="consent"><input type="checkbox" id="acc-consent"><span>J'accepte que mes heures et mes sorties soient enregistrées dans mon compte MyHours, comme décrit dans la <a href="mentions-legales.html#confidentialite">politique de confidentialité</a>.</span></label>
           <div class="rrow"><button type="button" class="primary" id="acc-google">Continuer avec Google</button></div>
           <details class="more acc-mail">
             <summary>Utiliser une adresse e-mail</summary>
@@ -328,6 +337,15 @@ svg .val{fill:var(--ink);font-weight:500}
             <button type="button" class="dangerbtn" id="acc-signout" data-confirm="Confirmer : effacer ce téléphone">Se déconnecter</button>
           </div>
           <p class="rhint">En vous déconnectant, vos heures restent dans votre compte et sont effacées de ce téléphone.</p>
+          <div class="rrow"><button type="button" class="secondary" id="acc-dl">Télécharger mes données</button></div>
+          <details class="more acc-mail" id="acc-del-box">
+            <summary>Supprimer mon compte</summary>
+            <p class="rhint">Efface définitivement votre compte et toutes les heures qui y sont enregistrées, ainsi que celles de ce téléphone. Rien ne pourra être récupéré : téléchargez d'abord vos données si vous voulez les garder.</p>
+            <div class="rrow">
+              <div class="field" id="acc-del-pass-f"><label for="acc-del-pass">Mot de passe, pour confirmer</label><input id="acc-del-pass" type="password" autocomplete="current-password"></div>
+              <button type="button" class="dangerbtn" id="acc-del" data-confirm="Confirmer la suppression définitive">Supprimer mon compte</button>
+            </div>
+          </details>
         </div>
         <p class="rhint" id="acc-hint" aria-live="polite"></p>
         <p class="msg" id="acc-msg" hidden></p>
@@ -360,6 +378,7 @@ svg .val{fill:var(--ink);font-weight:500}
         </div>
         <p class="rhint" id="r-hint"></p>
       </div>
+      <p class="legal full"><a href="mentions-legales.html">Mentions légales et confidentialité</a></p>
     </form>
 
     <div class="big"><span class="done num" id="f-done">0</span><span class="of num" id="f-of">/ 30 h</span><span class="chip" id="f-status"></span></div>

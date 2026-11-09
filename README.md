@@ -14,6 +14,8 @@ Chaque utilisateur peut se connecter avec son compte Google ou une adresse e-mai
 | `firebase.js` | Le SDK Firebase (connexion et base de données), regroupé en un seul fichier pour marcher hors ligne. Ne pas modifier à la main |
 | `firestore.rules` | Les règles de sécurité de la base, à copier dans la console Firebase |
 | `sw.js` | Le service worker : cache hors ligne et notifications de rappel |
+| `mentions-legales.html` | Mentions légales et politique de confidentialité (adresse de contact à remplir, voir section 2e) |
+| `fonts/` | Les polices, hébergées avec l'appli : aucune requête vers Google Fonts |
 | `manifest.webmanifest` | Nom, couleurs et icônes pour l'installation |
 | `icons/` | Le logo MyHours et les icônes d'installation |
 | `outils/firebase-entry.js` | La liste des fonctions Firebase incluses dans `firebase.js` (section 7) |
@@ -50,13 +52,19 @@ Ces valeurs ne sont pas secrètes : elles disent seulement à l'appli quel proje
 ### c. Créer la base de données
 
 1. Menu **Firestore Database → Créer une base de données**.
-2. Emplacement : choisissez une région européenne, par exemple `europe-west9 (Paris)`. Ce choix est définitif.
+2. Emplacement : choisissez `europe-west9 (Paris)`. Ce choix est définitif, et la politique de confidentialité indique que les heures sont stockées à Paris. Si vous choisissez une autre région, modifiez la phrase correspondante dans `mentions-legales.html`.
 3. Choisissez le **mode production**.
 4. Onglet **Règles** : remplacez tout le contenu par celui du fichier `firestore.rules`, puis **Publier**.
 
 Ces règles donnent à chaque utilisateur un seul document, que lui seul peut lire et modifier. Tout le reste de la base est fermé.
 
-### d. Publier
+### d. Indiquer votre adresse de contact
+
+Ouvrez `mentions-legales.html` et remplissez la ligne `var CONTACT = "";` en haut du fichier avec l'adresse e-mail où les utilisateurs peuvent vous écrire, par exemple `var CONTACT = "myhours.contact@gmail.com";`. Une adresse dédiée évite de publier votre adresse personnelle.
+
+Tant que la ligne est vide, la page affiche « [adresse de contact à compléter] » en orange. Le RGPD impose de pouvoir joindre le responsable des données : ne partagez pas l'appli avant de l'avoir remplie.
+
+### e. Publier
 
 Renvoyez `firebase-config.js` sur GitHub. Les téléphones qui ont déjà l'appli affichent **« Une nouvelle version est prête »** : touchez **Mettre à jour**.
 
@@ -73,7 +81,9 @@ Ouvrez l'appli une fois depuis l'icône. Ensuite, elle fonctionne en mode avion.
 
 ## 4. Compte et synchronisation
 
-Dans **Réglages → Compte et synchronisation**, touchez **Continuer avec Google**, ou ouvrez **Utiliser une adresse e-mail** pour créer un compte avec un mot de passe.
+Dans **Réglages → Compte et synchronisation**, cochez la case d'accord, puis touchez **Continuer avec Google**, ou ouvrez **Utiliser une adresse e-mail** pour créer un compte avec un mot de passe.
+
+La case d'accord est obligatoire : des heures de prédication peuvent révéler une conviction religieuse, une donnée sensible au sens du RGPD, qui ne peut être enregistrée qu'avec un accord explicite. La date de l'accord est gardée avec les données.
 
 - **Rien d'autre à faire** : chaque modification part dans le compte quelques secondes plus tard. L'appli récupère aussi ce qui a changé sur les autres appareils, à l'ouverture, au retour dans l'appli et toutes les 2 minutes.
 - **Heures déjà saisies** : à la première connexion, les heures déjà sur le téléphone sont ajoutées au compte. Rien n'est écrasé.
@@ -82,8 +92,10 @@ Dans **Réglages → Compte et synchronisation**, touchez **Continuer avec Googl
 - **Nouveau téléphone** : installez l'appli et connectez-vous, tout est retrouvé.
 - **Se déconnecter** : les heures restent dans le compte et sont effacées du téléphone, ce qui est utile s'il est partagé. Si des modifications ne sont pas encore envoyées, l'appli refuse la déconnexion tant que le réseau n'est pas revenu.
 - **Mot de passe oublié** : saisissez l'e-mail, puis touchez **Mot de passe oublié**.
+- **Télécharger mes données** : crée un fichier avec tout le carnet et les informations du compte (e-mail, date de création, date de l'accord…). Le fichier peut être réimporté avec **Importer**.
+- **Supprimer mon compte** : efface le compte, toutes les heures en ligne et celles du téléphone. Par sécurité, l'appli redemande la connexion Google ou le mot de passe juste avant.
 
-**Confidentialité** : chaque utilisateur ne voit que ses propres heures. En tant qu'administrateur du projet Firebase, vous pouvez techniquement voir les données dans la console. Dites-le aux personnes à qui vous partagez l'appli.
+**Confidentialité** : chaque utilisateur ne voit que ses propres heures. En tant qu'administrateur du projet Firebase, vous pouvez techniquement voir les données dans la console. La politique de confidentialité (lien en bas des Réglages) le dit clairement aux utilisateurs.
 
 ### Copie de secours
 
