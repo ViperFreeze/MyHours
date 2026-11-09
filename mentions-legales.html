@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mentions légales et confidentialité · MyHours</title>
+<meta name="theme-color" content="#ECEFF3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E141A" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<script>
+  /* ====== À REMPLIR : l'adresse e-mail où les utilisateurs peuvent vous écrire (obligatoire pour le RGPD). ====== */
+  var CONTACT = "";
+
+  /* Même thème que l'appli (clair, sombre ou automatique). */
+  try { var t = localStorage.getItem("myhours-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<style>
+@font-face{font-family:"Archivo";font-style:normal;font-display:swap;font-weight:100 900;font-stretch:62% 125%;src:url(fonts/archivo.woff2) format("woff2-variations")}
+@font-face{font-family:"Public Sans";font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/public-sans.woff2) format("woff2-variations")}
+:root{--bg:#ECEFF3;--surface:#FFFFFF;--ink:#131C25;--muted:#56636F;--line:#D3D9E1;--accent:#2445D6;--warn:#B4520F;--warn-soft:#FBE7D6;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0E141A;--surface:#161E27;--ink:#E5EBF1;--muted:#93A0AD;--line:#2A3540;--accent:#7F9BFF;--warn:#F09A5B;--warn-soft:#3A2617;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0E141A;--surface:#161E27;--ink:#E5EBF1;--muted:#93A0AD;--line:#2A3540;--accent:#7F9BFF;--warn:#F09A5B;--warn-soft:#3A2617;color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.6;padding:16px 14px calc(32px + env(safe-area-inset-bottom))}
+main{max-width:720px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 20px 26px}
+h1,h2{font-family:"Archivo","Arial Narrow",Arial,sans-serif;margin:0;text-wrap:balance}
+h1{font-size:24px;font-weight:700;font-stretch:90%}
+h2{font-size:18px;font-weight:700;font-stretch:90%;margin-top:28px;padding-top:18px;border-top:1px dashed var(--line)}
+h3{font-size:15px;margin:18px 0 4px}
+p,ul{margin:8px 0}
+ul{padding-left:20px}
+li{margin:4px 0}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:14px;font-weight:600;text-decoration:none}
+.muted{color:var(--muted);font-size:13px}
+address{font-style:normal}
+.todo{background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:1px 6px;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">← Retour à MyHours</a>
+  <h1>Mentions légales et confidentialité</h1>
+  <p class="muted">Dernière mise à jour : 9 novembre 2026</p>
+
+  <h2 id="mentions">Mentions légales</h2>
+  <h3>Éditeur</h3>
+  <p>MyHours est une application gratuite, éditée à titre non professionnel par un particulier. Elle n'a aucun but commercial et ne contient aucune publicité.</p>
+  <p>Contact : <span class="contact"></span></p>
+
+  <h3>Hébergement de l'application</h3>
+  <address>
+    GitHub Pages, service de GitHub, Inc.<br>
+    88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis<br>
+    Téléphone : +1 877 448 4820 · <a href="https://github.com" rel="noopener">github.com</a>
+  </address>
+
+  <h3>Hébergement des comptes et des données</h3>
+  <address>
+    Firebase, service de Google LLC<br>
+    1600 Amphitheatre Parkway, Mountain View, CA 94043, États-Unis<br>
+    <a href="https://firebase.google.com" rel="noopener">firebase.google.com</a>
+  </address>
+
+  <h3>Propriété intellectuelle</h3>
+  <p>Les polices de caractères utilisées (Archivo, Public Sans, IBM Plex Mono) sont distribuées sous licence SIL Open Font License.</p>
+
+  <h2 id="confidentialite">Politique de confidentialité</h2>
+  <p>Cette page explique quelles informations MyHours enregistre, pourquoi, où, et comment les consulter ou les effacer.</p>
+
+  <h3>Sans compte : rien ne quitte votre téléphone</h3>
+  <p>Vous pouvez utiliser MyHours sans vous connecter. Vos heures sont alors enregistrées uniquement dans le stockage de votre navigateur, sur votre appareil. Personne d'autre n'y a accès, et elles disparaissent si vous effacez les données du navigateur ou désinstallez l'appli.</p>
+
+  <h3>Responsable du traitement</h3>
+  <p>L'éditeur de MyHours, joignable à l'adresse : <span class="contact"></span></p>
+
+  <h3>Données enregistrées avec un compte</h3>
+  <ul>
+    <li><b>Votre compte</b> : adresse e-mail, identifiant technique, et, si vous vous connectez avec Google, le nom et la photo de profil que Google transmet. Les mots de passe sont gérés par Firebase et ne sont jamais visibles par l'éditeur.</li>
+    <li><b>Votre carnet</b> : heures réalisées (date, durée, type d'activité, note éventuelle), sorties prévues (date, heure, titre, lieu), objectif mensuel et réglages.</li>
+    <li><b>Votre accord</b> : la date à laquelle vous avez accepté cette politique.</li>
+  </ul>
+  <p>MyHours n'utilise ni publicité, ni mesure d'audience, ni cookie de suivi. Aucune donnée n'est vendue ou partagée.</p>
+
+  <h3>Pourquoi, et sur quelle base</h3>
+  <p>Ces données servent uniquement à vous permettre de suivre vos heures et de les retrouver sur tous vos appareils.</p>
+  <p>Des heures de prédication peuvent révéler une conviction religieuse, qui est une donnée sensible au sens du RGPD. Elles ne sont donc enregistrées dans un compte qu'avec votre <b>accord explicite</b>, donné en cochant la case prévue avant la connexion. Vous pouvez retirer cet accord à tout moment en supprimant votre compte.</p>
+  <p>Si vous avez moins de 15 ans, la création d'un compte nécessite aussi l'accord d'un de vos parents.</p>
+
+  <h3>Qui y a accès</h3>
+  <ul>
+    <li><b>Vous</b>, depuis vos appareils connectés à votre compte. Les règles de sécurité de la base empêchent tout autre utilisateur de lire vos données.</li>
+    <li><b>L'éditeur</b>, en tant qu'administrateur technique, peut techniquement y accéder. Il s'engage à ne le faire qu'à votre demande (par exemple pour vous aider) ou si la loi l'y oblige.</li>
+    <li><b>Google (Firebase)</b>, qui stocke les données pour le compte de l'éditeur, en tant que sous-traitant.</li>
+    <li><b>GitHub</b>, qui héberge les fichiers de l'appli. Comme tout hébergeur, il reçoit votre adresse IP quand vous ouvrez ou mettez à jour l'appli, mais aucune de vos heures.</li>
+  </ul>
+
+  <h3>Où sont stockées les données</h3>
+  <p>Les heures sont stockées dans une base de données située dans l'Union européenne (Paris). Certaines données techniques, notamment celles de connexion, peuvent être traitées par Google ou GitHub aux États-Unis. Ces transferts sont encadrés par les garanties prévues par le RGPD, notamment le cadre de protection des données UE–États-Unis et les clauses contractuelles types de ces prestataires.</p>
+
+  <h3>Combien de temps</h3>
+  <p>Vos données sont conservées tant que votre compte existe. Quand vous le supprimez, votre compte et votre carnet sont effacés immédiatement de la base. Les copies techniques de sécurité des prestataires sont ensuite effacées selon leurs propres délais.</p>
+
+  <h3>Sur votre appareil</h3>
+  <p>L'appli enregistre sur votre appareil votre carnet, vos réglages (thème, onglet ouvert…) et votre session de connexion. Ces éléments sont indispensables au fonctionnement de l'appli et ne servent à aucun suivi. C'est pourquoi aucun bandeau de cookies n'est affiché.</p>
+
+  <h3>Vos droits</h3>
+  <p>Vous pouvez exercer vos droits directement dans l'appli, dans <b>Réglages → Compte et synchronisation</b> :</p>
+  <ul>
+    <li><b>Accès et portabilité</b> : « Télécharger mes données » crée un fichier avec tout votre carnet et les informations de votre compte.</li>
+    <li><b>Rectification</b> : modifiez ou supprimez vos heures et sorties dans l'appli.</li>
+    <li><b>Effacement et retrait de l'accord</b> : « Supprimer mon compte » efface définitivement votre compte et vos données.</li>
+  </ul>
+  <p>Pour toute question, ou pour exercer un autre droit (limitation, opposition), écrivez à : <span class="contact"></span>. Si vous estimez que vos droits ne sont pas respectés, vous pouvez adresser une réclamation à la CNIL (<a href="https://www.cnil.fr" rel="noopener">cnil.fr</a>).</p>
+
+  <h3>Modifications</h3>
+  <p>Si cette politique change, la date de mise à jour en haut de page est modifiée. Pour une modification importante, un nouvel accord vous sera demandé.</p>
+</main>
+<script>
+  document.querySelectorAll(".contact").forEach(function (el) {
+    if (CONTACT) { var a = document.createElement("a"); a.href = "mailto:" + CONTACT; a.textContent = CONTACT; el.appendChild(a); }
+    else { el.className = "contact todo"; el.textContent = "[adresse de contact à compléter]"; }
+  });
+</script>
+</body>
+</html>

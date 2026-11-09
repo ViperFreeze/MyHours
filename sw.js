@@ -4,13 +4,21 @@
      Si au moins un a changé, ils sont tous remplacés d'un coup dans le cache, puis l'appli affiche
      « Mettre à jour ». On ne mélange donc jamais un ancien app.js avec un nouvel index.html.
      Si un fichier ne peut pas être téléchargé (réseau coupé en cours de route), rien n'est modifié.
+   - firebase.js (connexion et synchronisation) fait partie de l'appli : il est donc aussi disponible hors ligne.
+     Les échanges avec Firebase eux-mêmes passent par le réseau, jamais par le cache.
    - Rappels : si une sortie prévue est terminée sans être validée, une notification locale est affichée. */
 const CACHE = "myhours-app";
-const FONT_CACHE = "myhours-fonts";
 const DATA_CACHE = "myhours-data"; // liste des rappels, écrite par l'appli
 const APP_FILES = [
   "./index.html",
   "./app.js",
+  "./firebase-config.js",
+  "./firebase.js",
+  "./mentions-legales.html",
+  "./fonts/archivo.woff2",
+  "./fonts/public-sans.woff2",
+  "./fonts/ibm-plex-mono-400.woff2",
+  "./fonts/ibm-plex-mono-500.woff2",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -36,7 +44,7 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => ![CACHE, FONT_CACHE, DATA_CACHE].includes(k)).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => ![CACHE, DATA_CACHE].includes(k)).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
       .then(checkReminders)
   );
@@ -139,19 +147,11 @@ self.addEventListener("fetch", event => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  // Polices Google : cache d'abord, rafraîchies en arrière-plan.
-  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
-    event.respondWith(caches.open(FONT_CACHE).then(async cache => {
-      const cached = await cache.match(req);
-      const network = fetch(req).then(res => { if (res && (res.ok || res.type === "opaque")) cache.put(req, res.clone()); return res; }).catch(() => cached);
-      return cached || network;
-    }));
-    return;
-  }
   if (url.origin !== self.location.origin) return;
 
-  // Ouverture de l'appli → index.html ; autres fichiers → eux-mêmes (sans paramètres d'URL).
-  const key = req.mode === "navigate" ? INDEX : url.origin + url.pathname;
+  // Ouverture de l'appli → index.html ; pages et fichiers de l'appli (mentions légales…) → eux-mêmes, sans paramètres d'URL.
+  const path = url.origin + url.pathname;
+  const key = req.mode === "navigate" && !APP_SET.has(path) ? INDEX : path;
   if (!APP_SET.has(key)) return; // fichier hors appli : réseau normal
 
   // Ouvrir l'appli (ou la ramener au premier plan) déclenche la vérification de l'ensemble.

@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Règles de sécurité de MyHours : à copier dans la console Firebase,
+// Firestore Database → Règles, puis « Publier ».
+// Chaque utilisateur a un seul document, users/{son identifiant}, que lui seul peut lire et écrire.
+// Tout le reste de la base est fermé.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.app == "myhours"
+        && request.resource.data.data is map;
+    }
+  }
+}
