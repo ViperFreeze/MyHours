@@ -4,6 +4,8 @@
      Si au moins un a changé, ils sont tous remplacés d'un coup dans le cache, puis l'appli affiche
      « Mettre à jour ». On ne mélange donc jamais un ancien app.js avec un nouvel index.html.
      Si un fichier ne peut pas être téléchargé (réseau coupé en cours de route), rien n'est modifié.
+   - firebase.js (connexion et synchronisation) fait partie de l'appli : il est donc aussi disponible hors ligne.
+     Les échanges avec Firebase eux-mêmes passent par le réseau, jamais par le cache.
    - Rappels : si une sortie prévue est terminée sans être validée, une notification locale est affichée. */
 const CACHE = "myhours-app";
 const FONT_CACHE = "myhours-fonts";
@@ -11,6 +13,8 @@ const DATA_CACHE = "myhours-data"; // liste des rappels, écrite par l'appli
 const APP_FILES = [
   "./index.html",
   "./app.js",
+  "./firebase-config.js",
+  "./firebase.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

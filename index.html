@@ -124,6 +124,8 @@ a{color:var(--accent)}
 .sect .rhint{font-size:13px;color:var(--muted);margin:0}
 .sect .rrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 .sect .rrow .field{flex:1;min-width:180px}
+#acc > div:not([hidden]){display:flex;flex-direction:column;gap:10px}
+.acc-mail[open]{display:flex;flex-direction:column;gap:10px}
 .dangerbtn{background:var(--surface);color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;cursor:pointer;min-height:42px}
 .dangerbtn[data-armed="1"]{background:var(--danger);color:var(--surface)}
 .dangerbtn:disabled{opacity:.45;cursor:default}
@@ -296,8 +298,40 @@ svg .val{fill:var(--ink);font-weight:500}
       <div class="field full"><span class="flabel" id="s-default-l">Durée par défaut des boutons rapides</span>
         <div class="chips" id="s-default-chips" role="radiogroup" aria-labelledby="s-default-l"></div>
       </div>
-      <div class="field full"><label for="s-gcid">ID client Google (pour la sauvegarde Drive, facultatif)</label><input id="s-gcid" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></div>
       <div class="row"><button type="button" class="secondary" id="s-cancel">Fermer</button><button class="primary" type="submit">Enregistrer</button></div>
+
+      <div class="sect" id="acc">
+        <h2>Compte et synchronisation</h2>
+        <div id="acc-off" hidden>
+          <p class="rhint">La synchronisation n'est pas encore configurée sur ce site : vos heures restent sur cet appareil. Pensez à exporter de temps en temps.</p>
+        </div>
+        <div id="acc-out" hidden>
+          <p class="rhint">Connectez-vous pour que vos heures soient sauvegardées automatiquement et retrouvées sur tous vos appareils. Sans compte, elles restent seulement sur ce téléphone. Les heures déjà saisies ici sont ajoutées à votre compte.</p>
+          <div class="rrow"><button type="button" class="primary" id="acc-google">Continuer avec Google</button></div>
+          <details class="more acc-mail">
+            <summary>Utiliser une adresse e-mail</summary>
+            <div class="rrow">
+              <div class="field"><label for="acc-email">E-mail</label><input id="acc-email" type="email" autocomplete="email" inputmode="email" spellcheck="false"></div>
+              <div class="field"><label for="acc-pass">Mot de passe</label><input id="acc-pass" type="password" autocomplete="current-password" minlength="6"></div>
+            </div>
+            <div class="rrow">
+              <button type="button" class="secondary" id="acc-login">Se connecter</button>
+              <button type="button" class="secondary" id="acc-create">Créer un compte</button>
+              <button type="button" class="status-link" id="acc-reset">Mot de passe oublié</button>
+            </div>
+          </details>
+        </div>
+        <div id="acc-in" hidden>
+          <p class="rhint">Connecté : <b id="acc-who"></b></p>
+          <div class="rrow">
+            <button type="button" class="secondary" id="acc-sync">Synchroniser maintenant</button>
+            <button type="button" class="dangerbtn" id="acc-signout" data-confirm="Confirmer : effacer ce téléphone">Se déconnecter</button>
+          </div>
+          <p class="rhint">En vous déconnectant, vos heures restent dans votre compte et sont effacées de ce téléphone.</p>
+        </div>
+        <p class="rhint" id="acc-hint" aria-live="polite"></p>
+        <p class="msg" id="acc-msg" hidden></p>
+      </div>
 
       <div class="sect">
         <h2>Rappels de validation</h2>
@@ -306,33 +340,8 @@ svg .val{fill:var(--ink);font-weight:500}
       </div>
 
       <div class="sect">
-        <h2>Sauvegarde automatique</h2>
-        <p class="rhint">Après chaque modification, une copie de toutes vos données part dans un Gist privé de votre compte GitHub, qui garde l'historique des versions. Sur un nouveau téléphone, collez le même jeton : la sauvegarde est retrouvée et fusionnée.</p>
-        <div class="rrow" id="gh-setup">
-          <div class="field"><label for="gh-token">Jeton GitHub</label><input id="gh-token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…"></div>
-          <button type="button" class="secondary" id="gh-on">Activer</button>
-        </div>
-        <p class="rhint" id="gh-help">Pas encore de jeton ? <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=MyHours%20sauvegarde" target="_blank" rel="noopener">Créez-le sur GitHub</a> : la case <b>gist</b> est déjà cochée, choisissez « No expiration », puis copiez le jeton ici. Il reste sur cet appareil et n'est jamais exporté.</p>
-        <div class="rrow" id="gh-active" hidden>
-          <button type="button" class="secondary" id="gh-now">Sauvegarder maintenant</button>
-          <button type="button" class="dangerbtn" id="gh-stop" data-confirm="Confirmer la désactivation">Désactiver</button>
-        </div>
-        <p class="rhint" id="gh-hint" aria-live="polite"></p>
-      </div>
-
-      <div class="sect">
-        <h2>Sauvegarde Google Drive</h2>
-        <p class="rhint">Une copie de toutes vos données est gardée dans un dossier caché de votre Google Drive. « Restaurer » remplace les données de cet appareil par cette copie (nouveau téléphone, réinstallation…).</p>
-        <div class="rrow">
-          <button type="button" class="secondary" id="b-save">Sauvegarder maintenant</button>
-          <button type="button" class="dangerbtn" id="b-restore" data-confirm="Confirmer : remplacer les données">Restaurer depuis Google Drive</button>
-        </div>
-        <p class="rhint" id="b-hint"></p>
-      </div>
-
-      <div class="sect">
         <h2>Fichier de sauvegarde</h2>
-        <p class="rhint">Sans compte Google : « Exporter » crée un fichier à vous envoyer (Drive, mail, messagerie…). « Importer » le fusionne sur un autre appareil : rien n'est écrasé, les suppressions sont reportées.</p>
+        <p class="rhint">Copie de secours : « Exporter » crée un fichier à garder ou à vous envoyer (Drive, mail, messagerie…). « Importer » le fusionne avec ce carnet : rien n'est écrasé, les suppressions sont reportées.</p>
         <div class="rrow">
           <button type="button" class="secondary" id="x-export">Exporter</button>
           <button type="button" class="secondary" id="x-import">Importer</button>
@@ -425,6 +434,7 @@ svg .val{fill:var(--ink);font-weight:500}
   <div class="status" id="status"><span id="status-text">Données enregistrées sur cet appareil.</span> <button type="button" class="status-link" id="quick-save">Sauvegarder</button></div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="firebase-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

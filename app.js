@@ -1,7 +1,8 @@
-/* MyHours — suivi des heures de prédication, version hors ligne.
-   Toutes les données restent dans le navigateur (localStorage).
-   Les données peuvent être sauvegardées automatiquement dans un Gist GitHub privé, dans Google Drive,
-   ou dans un fichier exporté (fusionné sans rien écraser à l'import). */
+/* MyHours — suivi des heures de prédication, utilisable hors ligne et par plusieurs personnes.
+   Les données sont d'abord enregistrées dans le navigateur (localStorage) : l'appli marche sans réseau
+   et sans compte. Une fois connecté (Google ou e-mail), elles sont synchronisées automatiquement avec
+   le compte (Firebase), donc retrouvées sur tous les appareils. Un fichier exporté sert de copie de
+   secours (fusionné sans rien écraser à l'import). */
 
 /* ---------- Cœur : données et fusion (sans DOM, testable) ---------- */
 const CarnetCore = (() => {
@@ -73,6 +74,24 @@ const CarnetCore = (() => {
     return { app: "myhours", format: 1, exportedAt: nowIso(), data: s };
   }
 
+  /* Version « canonique » des données : listes triées par identifiant et clés d'objets triées.
+     Deux carnets identiques donnent exactement le même texte, quel que soit l'ordre de fusion
+     ou l'ordre des champs renvoyé par la base. Sert à savoir si la copie en ligne est à jour. */
+  function canonical(state) {
+    const d = exportPayload(state).data;
+    const byId = (x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+    d.entries.sort(byId); d.planned.sort(byId); d.calRemove.sort();
+    return d;
+  }
+  const stable = v => Array.isArray(v) ? "[" + v.map(stable).join(",") + "]"
+    : v && typeof v === "object" ? "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + stable(v[k])).join(",") + "}"
+    : JSON.stringify(v);
+  function signature(state) {
+    const t = stable(canonical(state));
+    let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return t.length + ":" + h;
+  }
+
   function parseImport(text) {
     let obj;
     try { obj = JSON.parse(text); } catch (e) { throw new Error("Ce fichier n'est pas un export MyHours (JSON illisible)."); }
@@ -81,14 +100,14 @@ const CarnetCore = (() => {
     return normalize(obj.data);
   }
 
-  return { normalize, merge, exportPayload, parseImport, DEFAULT_NAME };
+  return { normalize, merge, exportPayload, canonical, signature, parseImport, DEFAULT_NAME };
 })();
 if (typeof module !== "undefined") module.exports = CarnetCore;
 
 /* ---------- Interface ---------- */
 if (typeof document !== "undefined") (function () {
   "use strict";
-  const { normalize, merge, exportPayload, parseImport, DEFAULT_NAME } = CarnetCore;
+  const { normalize, merge, exportPayload, signature, parseImport, DEFAULT_NAME } = CarnetCore;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2, "0");
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -131,116 +150,242 @@ if (typeof document !== "undefined") (function () {
   }
   function commit() { state.changes = (state.changes || 0) + 1; save(); render(); }
 
-  /* ---------- Sauvegarde automatique dans un Gist GitHub privé ----------
-     Un jeton GitHub (droit « gist » seulement) est collé une fois dans Réglages. Il reste sur cet appareil,
-     hors des données : il n'apparaît jamais dans un export. Après chaque modification, une copie complète
-     (le même contenu qu'un export) part quelques secondes plus tard dans un Gist privé. GitHub garde
-     l'historique de chaque version. Si le Gist a été modifié ailleurs (autre appareil), il est d'abord
-     fusionné ici, sans rien écraser. Hors ligne, l'envoi attend le retour du réseau. */
-  const GH = LS + "-gist"; // { token, id, sig, remoteAt, last, error }
-  const GIST_FILE = "myhours-sauvegarde.json", GIST_DESC = "MyHours – sauvegarde automatique";
-  const ghGet = () => { try { return JSON.parse(localStorage.getItem(GH) || "{}") || {}; } catch (e) { return {}; } };
-  const ghSet = patch => { const v = { ...ghGet(), ...patch }; try { localStorage.setItem(GH, JSON.stringify(v)); } catch (e) {} return v; };
-  const ghOn = () => !!ghGet().token;
-  /* Empreinte des données : sert à savoir si la dernière copie envoyée est encore à jour. */
-  function dataSig() {
-    const t = JSON.stringify(exportPayload(state).data);
-    let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
-    return t.length + ":" + h;
-  }
-  const ghPending = () => ghOn() && ghGet().sig !== dataSig();
-  async function gh(method, path, token, body) {
-    try {
-      return await fetch("https://api.github.com" + path, {
-        method, cache: "no-store",
-        headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", ...(body ? { "Content-Type": "application/json" } : {}) },
-        body: body ? JSON.stringify(body) : undefined
+  /* ---------- Compte et synchronisation automatique (Firebase) ----------
+     Les données restent d'abord sur l'appareil : l'appli marche hors ligne et sans compte.
+     Une fois connecté (Google ou e-mail), chaque modification part quelques secondes plus tard dans
+     Firestore, dans un document propre au compte (users/{uid}). Les règles de sécurité (firestore.rules)
+     le réservent à son propriétaire : personne d'autre ne peut le lire.
+     Chaque envoi est une fusion (union + pierres tombales, voir merge) faite dans une transaction :
+     deux appareils qui écrivent en même temps ne s'écrasent jamais. Sans réseau, l'envoi attend.
+     La synchro se fait à l'ouverture, après chaque modification, au retour au premier plan,
+     au retour du réseau, et toutes les 2 minutes tant que l'appli est affichée. */
+  const FB_CONFIG = window.MYHOURS_FIREBASE || null;
+  const fbReady = !!(FB_CONFIG && FB_CONFIG.apiKey && FB_CONFIG.projectId);
+  const CLOUD = LS + "-cloud"; // { uid, email, sig, last, error } — sig : empreinte de la dernière version connue en ligne
+  const clGet = () => { try { return JSON.parse(localStorage.getItem(CLOUD) || "{}") || {}; } catch (e) { return {}; } };
+  const clSet = patch => { const v = { ...clGet(), ...patch }; try { localStorage.setItem(CLOUD, JSON.stringify(v)); } catch (e) {} return v; };
+  // Anciennes sauvegardes (Gist GitHub, Google Drive) retirées : on efface leurs réglages, dont le jeton GitHub.
+  try { [LS + "-gist", LS + "-gcid", LS + "-lastbackup"].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+
+  const dataSig = () => signature(state);
+  /* Des modifications de ce carnet ne sont pas encore en ligne (même si la session a expiré). */
+  const cloudPending = () => { const s = clGet(); return !!s.uid && s.sig !== dataSig(); };
+  const offlineError = () => Object.assign(new Error("Pas de réseau : la synchronisation reprendra dès le retour de la connexion."), { offline: true });
+
+  let fb = null, fbLoading = null, user = null, authReady = false;
+  function loadFirebase() {
+    if (!fbReady) return Promise.reject(new Error("La synchronisation n'est pas encore configurée sur ce site."));
+    if (!fbLoading) fbLoading = (async () => {
+      const m = await import("./firebase.js");
+      const app = m.initializeApp(FB_CONFIG);
+      const auth = m.initializeAuth(app, {
+        persistence: [m.indexedDBLocalPersistence, m.browserLocalPersistence],
+        popupRedirectResolver: m.browserPopupRedirectResolver
       });
-    } catch (e) { throw new Error("GitHub est injoignable pour le moment."); }
+      auth.languageCode = "fr";
+      fb = { m, auth, db: m.getFirestore(app) };
+      m.onAuthStateChanged(auth, u => { onUser(u).catch(() => {}); });
+      return fb;
+    })().catch(e => { fbLoading = null; throw new Error("Impossible de charger la synchronisation. Vérifiez la connexion."); });
+    return fbLoading;
   }
-  function ghError(r) {
-    if (r.status === 401) return new Error("Jeton GitHub refusé ou expiré : collez-en un nouveau dans Réglages.");
-    if (r.status === 403 || r.status === 404 || r.status === 422) return new Error("Ce jeton n'a pas le droit de gérer les gists.");
-    return new Error(`GitHub a refusé la sauvegarde (erreur ${r.status}).`);
+
+  const blankState = () => ({ ...normalize({}), lastSync: "", changes: 0 });
+  async function onUser(u) {
+    authReady = true;
+    if (!u) { user = null; renderAccount(); renderStatus(); return; }
+    const meta = clGet();
+    if (meta.uid && meta.uid !== u.uid) {
+      // Les données de cet appareil appartiennent à un autre compte : on ne les mélange jamais.
+      if (cloudPending()) {
+        await fb.m.signOut(fb.auth);
+        accMsg(`Ce téléphone a des modifications pas encore envoyées pour ${meta.email || "un autre compte"}. Reconnectez-vous d'abord avec ce compte.`);
+        return;
+      }
+      state = blankState(); save(); render();
+      try { localStorage.removeItem(CLOUD); } catch (e) {}
+    }
+    user = u;
+    // Premier lien avec ce compte : les heures déjà sur l'appareil seront fusionnées dans le compte.
+    clSet({ uid: u.uid, email: u.email || "", error: "" });
+    accMsg("");
+    renderAccount(); cloudSoon(200);
   }
-  const offlineError = () => Object.assign(new Error("Pas de réseau : la sauvegarde partira dès le retour de la connexion."), { offline: true });
-  /* Vérifie le jeton et retrouve une sauvegarde existante (réinstallation, nouveau téléphone). */
-  async function ghFind(token) {
-    const r = await gh("GET", "/gists?per_page=100", token);
-    if (!r.ok) throw ghError(r);
-    const scopes = r.headers.get("X-OAuth-Scopes");
-    if (scopes !== null && !scopes.split(",").map(s => s.trim()).includes("gist")) throw new Error("Ce jeton n'a pas le droit « gist ». Créez-en un avec cette case cochée.");
-    const g = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
-    return g ? g.id : "";
+
+  function cloudError(e) {
+    if (e && e.offline) return e;
+    const code = (e && e.code) || "";
+    if (code === "permission-denied") return new Error("La base a refusé l'accès : vérifiez les règles de sécurité Firestore.");
+    if (code === "unavailable" || code === "deadline-exceeded" || !navigator.onLine) return offlineError();
+    if (code === "unauthenticated") return new Error("Session expirée : reconnectez-vous.");
+    return new Error(e && e.message ? e.message : "La synchronisation a échoué.");
   }
-  async function ghMerge(g) {
-    const f = g.files && g.files[GIST_FILE];
-    if (!f) return null;
-    let text = f.content;
-    if (f.truncated) { const r = await fetch(f.raw_url, { cache: "no-store" }); if (!r.ok) throw new Error("Lecture de la sauvegarde en ligne impossible."); text = await r.text(); }
-    const { merged, report } = merge(state, parseImport(text));
-    state = merged; save(); render();
-    return report;
-  }
-  let ghBusy = null, ghTimer = null;
-  /* Récupère ce qui a changé en ligne, puis envoie la copie locale si elle n'est plus à jour. */
-  function ghSync() {
-    if (ghBusy) return ghBusy;
-    ghBusy = (async () => {
-      const s = ghGet();
-      if (!s.token) throw new Error("Sauvegarde automatique non activée.");
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, ko) => setTimeout(() => ko(Object.assign(new Error("délai dépassé"), { code: "deadline-exceeded" })), ms))]);
+
+  let clBusy = null, clTimer = null;
+  /* Fusionne la version en ligne avec celle de l'appareil, enregistre le résultat des deux côtés.
+     Renvoie le rapport de fusion côté appareil (ce qui a été récupéré). */
+  function cloudSync() {
+    if (clBusy) return clBusy;
+    clBusy = (async () => {
+      if (!user) throw new Error("Connectez-vous pour synchroniser.");
       if (!navigator.onLine) throw offlineError();
-      let report = null;
-      if (s.id) {
-        const r = await gh("GET", "/gists/" + s.id, s.token);
-        if (r.status === 404) ghSet({ id: "", remoteAt: "" }); // Gist supprimé : on en recrée un
-        else if (!r.ok) throw ghError(r);
-        else { const g = await r.json(); if (g.updated_at !== s.remoteAt) { report = await ghMerge(g); ghSet({ remoteAt: g.updated_at }); } }
-      }
-      if (ghPending()) {
-        const sig = dataSig(), cur = ghGet();
-        const files = { [GIST_FILE]: { content: JSON.stringify(exportPayload(state), null, 1) } };
-        const r = cur.id
-          ? await gh("PATCH", "/gists/" + cur.id, cur.token, { files })
-          : await gh("POST", "/gists", cur.token, { description: GIST_DESC, public: false, files });
-        if (!r.ok) throw ghError(r);
-        const g = await r.json();
-        ghSet({ id: g.id, sig, remoteAt: g.updated_at, last: nowIso() });
-      }
-      ghSet({ error: "" });
+      const { m, db } = fb, ref = m.doc(db, "users", user.uid), uidAtStart = user.uid;
+      const result = await withTimeout(m.runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        const remote = snap.exists() && snap.data().data ? normalize(snap.data().data) : null;
+        const merged = remote ? merge(state, remote).merged : normalize(state);
+        if (!remote || signature(remote) !== signature(merged)) {
+          tx.set(ref, { app: "myhours", format: 1, data: CarnetCore.canonical(merged), updatedAt: m.serverTimestamp() });
+        }
+        return merged;
+      }), 25000);
+      if (!user || user.uid !== uidAtStart) return null; // déconnecté pendant l'envoi
+      // L'utilisateur a pu modifier le carnet pendant l'envoi : on fusionne au lieu de remplacer.
+      const before = dataSig();
+      const { merged, report } = merge(state, result);
+      state = merged;
+      clSet({ sig: signature(result), last: nowIso(), error: "" });
+      save();
+      if (dataSig() !== before) render();
       return report;
     })()
-      .catch(e => { if (!e.offline) ghSet({ error: e.message }); throw e; })
-      .finally(() => { ghBusy = null; renderStatus(); if (ghPending() && navigator.onLine && !ghGet().error) ghSoon(1500); });
+      .catch(e => { const err = cloudError(e); if (!err.offline) clSet({ error: err.message }); throw err; })
+      .finally(() => { clBusy = null; renderStatus(); if (user && cloudPending() && navigator.onLine && !clGet().error) cloudSoon(1500); });
     renderStatus();
-    return ghBusy;
+    return clBusy;
   }
-  function ghSoon(delay) {
-    clearTimeout(ghTimer);
-    if (!ghOn() || !navigator.onLine) { renderStatus(); return; }
-    ghTimer = setTimeout(() => ghSync().then(rep => { if (rep && (rep.addedEntries || rep.addedPlanned || rep.removed)) toast("Données récupérées depuis la sauvegarde en ligne"); }).catch(() => {}), delay);
+  function cloudSoon(delay) {
+    clearTimeout(clTimer);
+    if (!user || !navigator.onLine) { renderStatus(); return; }
+    clTimer = setTimeout(() => cloudSync().then(rep => {
+      if (rep && (rep.addedEntries || rep.addedPlanned || rep.removed)) toast("Données récupérées depuis votre compte");
+    }).catch(() => {}), delay);
     renderStatus();
   }
-  function scheduleBackup() { if (ghPending()) ghSoon(4000); else renderStatus(); }
+  function scheduleBackup() { if (user && cloudPending()) { clSet({ error: "" }); cloudSoon(3000); } else renderStatus(); }
 
-  function ghLabel() {
-    const s = ghGet();
-    if (!s.token) return "";
-    if (ghBusy) return "sauvegarde en cours…";
-    if (s.error) return "la sauvegarde en ligne a échoué";
-    if (ghPending()) return navigator.onLine ? "sauvegarde en ligne dans un instant" : "sauvegarde en ligne en attente du réseau";
-    return s.last ? `sauvegardé en ligne le ${dfStamp.format(new Date(s.last))}` : "sauvegarde en ligne active";
+  function cloudLabel() {
+    const s = clGet();
+    if (!s.uid) return "";
+    if (!user) return authReady ? "reconnectez-vous pour reprendre la synchronisation" : cloudPending() ? "synchronisation en attente" : "";
+    if (clBusy) return "synchronisation…";
+    if (s.error) return "la synchronisation a échoué";
+    if (cloudPending()) return navigator.onLine ? "synchronisation dans un instant" : "synchronisation en attente du réseau";
+    return s.last ? `synchronisé le ${dfStamp.format(new Date(s.last))}` : "synchronisation active";
   }
   function renderStatus() {
     const st = $("#status-text"); if (!st) return;
-    const lbl = ghLabel();
+    const lbl = cloudLabel();
     st.textContent = !storageOk
-      ? "Impossible d'enregistrer sur cet appareil (stockage plein ou bloqué). Sauvegardez vos données pour ne rien perdre."
+      ? "Impossible d'enregistrer sur cet appareil (stockage plein ou bloqué). Exportez vos données pour ne rien perdre."
       : `Données enregistrées sur cet appareil${lbl ? ` · ${lbl}` : ""}.`;
-    const hint = $("#gh-hint"); if (!hint) return;
-    const s = ghGet();
-    $("#gh-setup").hidden = !!s.token; $("#gh-active").hidden = !s.token; $("#gh-help").hidden = !!s.token;
-    if (s.token) hint.textContent = cap(lbl) + "." + (s.error ? ` ${s.error}` : "");
+    const q = $("#quick-save");
+    if (q) q.textContent = user ? "Synchroniser" : fbReady ? "Se connecter" : "Exporter";
+    const hint = $("#acc-hint"); if (!hint) return;
+    const s = clGet();
+    hint.textContent = user ? cap(lbl) + "." + (s.error ? ` ${s.error}` : "") : "";
+  }
+
+  /* ---------- Section « Compte » des réglages ---------- */
+  function accMsg(t, ok) { const m = $("#acc-msg"); if (!m) return; m.hidden = !t; m.textContent = t || ""; m.className = "msg" + (ok ? " okm" : ""); }
+  function renderAccount() {
+    if (!$("#acc")) return;
+    $("#acc-off").hidden = fbReady;
+    $("#acc-out").hidden = !fbReady || !!user;
+    $("#acc-in").hidden = !user;
+    if (user) $("#acc-who").textContent = user.email || "compte connecté";
+    renderStatus(); renderSyncState();
+  }
+  function authError(e) {
+    const code = (e && e.code) || "";
+    const map = {
+      "auth/popup-blocked": "La fenêtre de connexion a été bloquée. Touchez à nouveau le bouton.",
+      "auth/popup-closed-by-user": "Connexion annulée.",
+      "auth/cancelled-popup-request": "Connexion annulée.",
+      "auth/unauthorized-domain": "Ce site n'est pas autorisé dans Firebase (Authentication → Paramètres → Domaines autorisés).",
+      "auth/operation-not-allowed": "Ce mode de connexion n'est pas activé dans Firebase.",
+      "auth/invalid-credential": "E-mail ou mot de passe incorrect.",
+      "auth/invalid-login-credentials": "E-mail ou mot de passe incorrect.",
+      "auth/wrong-password": "E-mail ou mot de passe incorrect.",
+      "auth/user-not-found": "Aucun compte avec cet e-mail : utilisez « Créer un compte ».",
+      "auth/email-already-in-use": "Un compte existe déjà avec cet e-mail : utilisez « Se connecter ».",
+      "auth/weak-password": "Mot de passe trop court : 6 caractères minimum.",
+      "auth/invalid-email": "Adresse e-mail invalide.",
+      "auth/missing-password": "Indiquez un mot de passe.",
+      "auth/network-request-failed": "Pas de réseau : réessayez une fois connecté.",
+      "auth/too-many-requests": "Trop de tentatives : réessayez dans quelques minutes."
+    };
+    return map[code] || (e && e.message) || "Connexion impossible.";
+  }
+  async function withBtn(btn, label, fn) {
+    const orig = btn.dataset.armed === "1" ? btn.dataset.orig : btn.textContent;
+    btn.dataset.armed = "0"; btn.disabled = true; btn.textContent = label;
+    try { await fn(); } finally { btn.disabled = false; btn.textContent = orig; }
+  }
+  $("#acc-google").addEventListener("click", ev => {
+    accMsg("");
+    if (!navigator.onLine) { accMsg("Pas de réseau : réessayez une fois connecté."); return; }
+    // La fenêtre Google doit s'ouvrir directement dans le clic, sinon le navigateur la bloque :
+    // Firebase est donc déjà chargé à l'ouverture de l'appli.
+    if (!fb) { loadFirebase().then(() => accMsg("Prêt : touchez à nouveau le bouton.", true)).catch(e => accMsg(e.message)); return; }
+    const p = fb.m.signInWithPopup(fb.auth, new fb.m.GoogleAuthProvider());
+    withBtn(ev.currentTarget, "Connexion…", () => p.then(() => toast("Connecté")).catch(e => {
+      accMsg(authError(e) + (isIOS && standalone && e.code !== "auth/popup-closed-by-user" ? " Sur iPhone, vous pouvez aussi utiliser une adresse e-mail." : ""));
+    }));
+  });
+  const readCreds = () => {
+    const email = $("#acc-email").value.trim(), pass = $("#acc-pass").value;
+    if (!email) { accMsg("Indiquez votre adresse e-mail."); $("#acc-email").focus(); return null; }
+    return { email, pass };
+  };
+  async function mailAuth(btn, create) {
+    accMsg("");
+    const c = readCreds(); if (!c) return;
+    if (!c.pass) { accMsg("Indiquez un mot de passe."); $("#acc-pass").focus(); return; }
+    if (!navigator.onLine) { accMsg("Pas de réseau : réessayez une fois connecté."); return; }
+    await withBtn(btn, create ? "Création…" : "Connexion…", async () => {
+      try {
+        const { m, auth } = await loadFirebase();
+        await (create ? m.createUserWithEmailAndPassword : m.signInWithEmailAndPassword)(auth, c.email, c.pass);
+        $("#acc-pass").value = "";
+        toast(create ? "Compte créé" : "Connecté");
+      } catch (e) { accMsg(authError(e)); }
+    });
+  }
+  $("#acc-login").addEventListener("click", ev => mailAuth(ev.currentTarget, false));
+  $("#acc-create").addEventListener("click", ev => mailAuth(ev.currentTarget, true));
+  ["#acc-email", "#acc-pass"].forEach(s => $(s).addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); $("#acc-login").click(); } }));
+  $("#acc-reset").addEventListener("click", async ev => {
+    accMsg("");
+    const c = readCreds(); if (!c) return;
+    await withBtn(ev.currentTarget, "Envoi…", async () => {
+      try { const { m, auth } = await loadFirebase(); await m.sendPasswordResetEmail(auth, c.email); accMsg(`Un e-mail pour choisir un nouveau mot de passe a été envoyé à ${c.email}.`, true); }
+      catch (e) { accMsg(authError(e)); }
+    });
+  });
+  $("#acc-sync").addEventListener("click", () => syncNow());
+  /* Déconnexion : les heures restent dans le compte et quittent ce téléphone (utile s'il est partagé). */
+  $("#acc-signout").addEventListener("click", async ev => {
+    const btn = ev.currentTarget;
+    if (!armed(btn)) return;
+    await withBtn(btn, "Déconnexion…", async () => {
+      if (cloudPending()) { try { await cloudSync(); } catch (e) {} }
+      if (cloudPending()) { accMsg("Des modifications ne sont pas encore envoyées : reconnectez-vous au réseau, puis réessayez."); return; }
+      clearTimeout(clTimer);
+      await fb.m.signOut(fb.auth);
+      try { localStorage.removeItem(CLOUD); } catch (e) {}
+      state = blankState(); save(); render(); renderAccount();
+      toast("Déconnecté. Vos heures restent dans votre compte.");
+    });
+  });
+
+  async function syncNow() {
+    if (!user) { openDrawer("settings"); $("#acc").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (!navigator.onLine) { toast("Pas de réseau : la synchronisation reprendra dès le retour de la connexion."); return; }
+    clearTimeout(clTimer); clSet({ error: "" });
+    try { await cloudSync(); toast("Synchronisé avec votre compte"); }
+    catch (e) { toast(e.message || "Synchronisation impossible."); }
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
@@ -328,91 +473,6 @@ if (typeof document !== "undefined") (function () {
     $("#scale").innerHTML = `<span>0 h</span><span>1 case = ${unit} h</span><span>${num(goal)} h</span>`;
   }
   const dateBlock = d => `<div class="date">${esc(dfWd.format(d).replace(".", ""))}<b>${d.getDate()}</b>${esc(dfMon.format(d).replace(".", ""))}</div>`;
-
-  /* ---------- Connexion Google (sauvegarde Drive) ----------
-     API Google appelée depuis le navigateur, sans serveur, avec l'ID client saisi dans Réglages. */
-  const GCID = LS + "-gcid";
-  const getGcid = () => { try { return localStorage.getItem(GCID) || ""; } catch (e) { return ""; } };
-  const setGcid = v => { try { v ? localStorage.setItem(GCID, v) : localStorage.removeItem(GCID); } catch (e) {} };
-  let gToken = null, gTokenExp = 0;
-  function loadGis() {
-    if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
-    return new Promise((ok, ko) => {
-      const s = document.createElement("script");
-      s.src = "https://accounts.google.com/gsi/client"; s.async = true;
-      s.onload = ok; s.onerror = () => { s.remove(); ko(new Error("Impossible de joindre Google. Vérifiez la connexion.")); };
-      document.head.appendChild(s);
-    });
-  }
-  async function gAuth() {
-    if (gToken && Date.now() < gTokenExp) return;
-    await loadGis();
-    await new Promise((ok, ko) => {
-      google.accounts.oauth2.initTokenClient({
-        client_id: getGcid(), scope: "https://www.googleapis.com/auth/drive.appdata",
-        callback: r => { if (r.error) { ko(new Error("Connexion Google refusée.")); return; } gToken = r.access_token; gTokenExp = Date.now() + (r.expires_in - 60) * 1000; ok(); },
-        error_callback: () => ko(new Error("Connexion Google annulée."))
-      }).requestAccessToken({ prompt: "" });
-    });
-  }
-  /* Sauvegarde dans Google Drive, dans le dossier caché propre à l'appli (appDataFolder) :
-     un seul fichier, invisible dans le Drive, et l'appli n'a accès à rien d'autre. */
-  const BACKUP = "myhours-sauvegarde.json";
-  const LASTB = LS + "-lastbackup";
-  const gFetch = async (url, opts = {}) => {
-    const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + gToken, ...(opts.headers || {}) } });
-    if (r.status === 401) { gToken = null; throw new Error("Connexion Google expirée : réessayez."); }
-    return r;
-  };
-  async function backupFileId() {
-    const q = new URLSearchParams({ spaces: "appDataFolder", q: `name='${BACKUP}'`, fields: "files(id,modifiedTime)", orderBy: "modifiedTime desc" });
-    const r = await gFetch("https://www.googleapis.com/drive/v3/files?" + q);
-    if (!r.ok) throw new Error("Google Drive inaccessible. Vérifiez que l'API Google Drive est activée.");
-    const f = (await r.json()).files || [];
-    return f.length ? f[0] : null;
-  }
-  async function gBackup() {
-    const body = JSON.stringify(exportPayload(state));
-    const f = await backupFileId();
-    let r;
-    if (f) r = await gFetch(`https://www.googleapis.com/upload/drive/v3/files/${f.id}?uploadType=media`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body });
-    else {
-      const meta = JSON.stringify({ name: BACKUP, parents: ["appDataFolder"], mimeType: "application/json" }), b = "myhours" + Date.now();
-      r = await gFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-        method: "POST", headers: { "Content-Type": `multipart/related; boundary=${b}` },
-        body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`
-      });
-    }
-    if (!r.ok) throw new Error("La sauvegarde Google Drive a échoué.");
-    try { localStorage.setItem(LASTB, nowIso()); } catch (e) {}
-    renderBackup();
-  }
-  async function gRestore() {
-    const f = await backupFileId();
-    if (!f) throw new Error("Aucune sauvegarde trouvée dans Google Drive.");
-    const r = await gFetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`);
-    if (!r.ok) throw new Error("Lecture de la sauvegarde impossible.");
-    const obj = await r.json();
-    if (!obj || obj.app !== "myhours" || !obj.data) throw new Error("La sauvegarde est illisible.");
-    state = normalize(obj.data);
-    return obj.savedAt || obj.exportedAt;
-  }
-  function renderBackup() {
-    let last = ""; try { last = localStorage.getItem(LASTB) || ""; } catch (e) {}
-    $("#b-hint").textContent = last ? `Dernière sauvegarde depuis cet appareil : ${dfStamp.format(new Date(last))}.` : "Pas encore de sauvegarde depuis cet appareil.";
-  }
-  const needGoogle = () => {
-    if (!getGcid()) { toast("Ajoutez d'abord votre ID client Google dans Réglages."); openDrawer("settings"); $("#s-gcid").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); return true; }
-    if (!navigator.onLine) { toast("Pas de réseau : réessayez une fois connecté."); return true; }
-    return false;
-  };
-  async function busy(btn, label, fn) {
-    const orig = btn.dataset.armed === "1" ? btn.dataset.orig : btn.textContent;
-    btn.dataset.armed = "0"; btn.disabled = true; btn.textContent = label;
-    try { await gAuth(); await fn(); } catch (e) { toast(e.message || "Opération Google impossible."); }
-    finally { btn.disabled = false; btn.textContent = orig; }
-  }
-
 
   function renderTodo(c) {
     const past = state.planned.filter(p => endOf(p) <= c.now).sort((a, b) => a.start.localeCompare(b.start));
@@ -575,10 +635,9 @@ if (typeof document !== "undefined") (function () {
     $("#settings").hidden = !set; $("#btn-settings").setAttribute("aria-expanded", String(set));
     if (set) {
       $("#s-goal").value = state.goal;
-      $("#s-gcid").value = getGcid();
       $("#s-err").hidden = true; $("#x-msg").hidden = true;
       setDefaultChips(state.defaultHours);
-      updateSettingsSum(); renderBackup(); renderSyncState(); disarmReset(); renderReset(); renderStatus(); renderNotif();
+      updateSettingsSum(); renderAccount(); disarmReset(); renderReset(); renderStatus(); renderNotif();
     }
   }
   $("#btn-settings").addEventListener("click", () => openDrawer($("#settings").hidden ? "settings" : null));
@@ -633,8 +692,6 @@ if (typeof document !== "undefined") (function () {
     }
     state.goal = Math.round(g * 2) / 2;
     state.defaultHours = pickedDefault;
-    setGcid($("#s-gcid").value.trim());
-    if (getGcid() && navigator.onLine) loadGis().catch(() => {});
     state.settingsUpdated = nowIso();
     openDrawer(null); commit(); toast("Réglages enregistrés");
   });
@@ -642,6 +699,7 @@ if (typeof document !== "undefined") (function () {
   /* ---------- fichier de sauvegarde : export / import fusionné ---------- */
   function xmsg(t, ok) { const m = $("#x-msg"); m.hidden = !t; m.textContent = t || ""; m.className = "msg" + (ok ? " okm" : ""); }
   function renderSyncState() {
+    if (user) { $("#x-state").textContent = "Vos heures sont synchronisées automatiquement avec votre compte. L'export reste utile comme copie de secours."; return; }
     const ch = state.changes || 0;
     const last = state.lastSync ? `Dernier export ou import : ${dfStamp.format(new Date(state.lastSync))}.` : "Aucun export pour l'instant.";
     $("#x-state").textContent = `${last} ${ch ? `${plural(ch, "modification")} depuis.` : "Rien de nouveau depuis."}`;
@@ -676,55 +734,21 @@ if (typeof document !== "undefined") (function () {
     } catch (e) { xmsg(e.message); }
   });
 
-  /* Sauvegarde automatique : activation, sauvegarde immédiate, désactivation. */
-  $("#gh-on").addEventListener("click", async ev => {
-    const btn = ev.currentTarget, token = $("#gh-token").value.trim(), hint = $("#gh-hint");
-    if (!token) { hint.textContent = "Collez d'abord votre jeton GitHub."; $("#gh-token").focus(); return; }
-    if (!navigator.onLine) { hint.textContent = "Pas de réseau : réessayez une fois connecté."; return; }
-    btn.disabled = true; btn.textContent = "Vérification…";
-    try {
-      const id = await ghFind(token);
-      ghSet({ token, id, sig: "", remoteAt: "", last: "", error: "" });
-      $("#gh-token").value = "";
-      const rep = await ghSync();
-      toast(id ? (rep && (rep.addedEntries || rep.addedPlanned) ? "Sauvegarde retrouvée et fusionnée avec cet appareil" : "Sauvegarde retrouvée : elle sera tenue à jour")
-               : "Sauvegarde automatique activée");
-    } catch (e) {
-      if (!ghGet().id) { try { localStorage.removeItem(GH); } catch (err) {} } // jeton refusé : on n'enregistre rien
-      renderStatus();
-      hint.textContent = e.message || "Activation impossible.";
-    } finally { btn.disabled = false; btn.textContent = "Activer"; }
-  });
-  $("#gh-token").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); $("#gh-on").click(); } });
-  $("#gh-now").addEventListener("click", () => manualBackup());
-  $("#gh-stop").addEventListener("click", ev => {
-    if (!armed(ev.currentTarget)) return;
-    clearTimeout(ghTimer);
-    try { localStorage.removeItem(GH); } catch (e) {}
-    renderStatus(); $("#gh-hint").textContent = "Désactivée. La dernière copie reste dans votre Gist sur GitHub.";
-  });
-
-  /* Le petit lien « Sauvegarder » en bas de l'écran : en ligne si la sauvegarde automatique est active,
-     sinon un fichier. */
-  async function manualBackup() {
-    if (ghOn()) {
-      if (!navigator.onLine) { toast("Pas de réseau : la sauvegarde partira dès le retour de la connexion."); return; }
-      clearTimeout(ghTimer);
-      try { await ghSync(); toast("Sauvegarde en ligne à jour"); }
-      catch (e) { toast(e.message || "Sauvegarde en ligne impossible."); }
-      return;
-    }
+  /* Le petit lien en bas de l'écran : synchroniser si connecté, sinon se connecter (ou exporter
+     si la synchronisation n'est pas configurée sur ce site). */
+  $("#quick-save").addEventListener("click", async () => {
+    if (user || fbReady) { syncNow(); return; }
     try { const name = await exportFile(); if (name) toast(`Fichier « ${name} » créé`); }
     catch (e) { toast(e.message); }
-  }
-  $("#quick-save").addEventListener("click", manualBackup);
-  window.addEventListener("online", () => ghSoon(1000));
+  });
+  window.addEventListener("online", () => cloudSoon(1000));
   window.addEventListener("offline", renderStatus);
   document.addEventListener("visibilitychange", () => {
-    if (!ghOn() || !navigator.onLine) return;
-    if (document.hidden) { if (ghPending()) { clearTimeout(ghTimer); ghSync().catch(() => {}); } } // on part : envoyer tout de suite
-    else ghSoon(1500); // on revient : récupérer ce qui a changé ailleurs
+    if (!user || !navigator.onLine) return;
+    if (document.hidden) { if (cloudPending()) { clearTimeout(clTimer); cloudSync().catch(() => {}); } } // on part : envoyer tout de suite
+    else cloudSoon(800); // on revient : récupérer ce qui a changé sur les autres appareils
   });
+  setInterval(() => { if (user && !document.hidden && navigator.onLine && !clBusy) cloudSoon(0); }, 120000);
   $("#x-import").addEventListener("click", () => { $("#x-file").value = ""; $("#x-file").click(); });
   $("#x-file").addEventListener("change", async () => {
     const f = $("#x-file").files && $("#x-file").files[0];
@@ -890,22 +914,6 @@ if (typeof document !== "undefined") (function () {
     addOn(sel, hrs, $("#d-note").value, isFuture(sel) ? $("#d-time").value : "");
     $("#d-time").value = ""; $("#day-more").open = false;
   });
-  $("#b-save").addEventListener("click", ev => {
-    if (needGoogle()) return;
-    busy(ev.currentTarget, "Sauvegarde…", async () => { await gBackup(); toast("Sauvegarde Google Drive faite"); });
-  });
-  $("#b-restore").addEventListener("click", ev => {
-    const btn = ev.currentTarget;
-    if (btn.dataset.armed !== "1" && needGoogle()) return;
-    if (!armed(btn)) return;
-    busy(btn, "Restauration…", async () => {
-      const when = await gRestore();
-      save(); render(); openDrawer(null);
-      toast(`Données restaurées${when ? ` (sauvegarde du ${dfFull.format(new Date(when))})` : ""}`);
-    });
-  });
-  // Préchargé pour que la fenêtre de connexion Google s'ouvre directement au clic (sinon le navigateur peut la bloquer).
-  if (getGcid() && navigator.onLine) loadGis().catch(() => {});
   $("#q-edit").addEventListener("click", () => { openDrawer("settings"); window.scrollTo({ top: 0, behavior: "smooth" }); focusDefaultChip(); });
 
   /* ---------- actions des listes (confirmation dans la page) ---------- */
@@ -1100,5 +1108,7 @@ if (typeof document !== "undefined") (function () {
     history.replaceState(null, "", location.pathname);
     setTimeout(focusTodo, 300);
   }
-  ghSoon(1500); // à l'ouverture : récupérer ce qui a changé en ligne, puis envoyer ce qui manque
+  // À l'ouverture : charger Firebase (la session est retrouvée toute seule), puis synchroniser.
+  renderAccount();
+  if (fbReady) loadFirebase().catch(() => renderStatus());
 })();
