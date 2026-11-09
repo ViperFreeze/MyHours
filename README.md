@@ -26,7 +26,7 @@ Le téléphone doit télécharger l'appli une première fois depuis une adresse 
 
 1. Dans le dépôt GitHub : **Add file → Upload files**, puis glissez **tout le contenu** du dossier. Validez avec **Commit changes**.
 2. Allez dans **Settings → Pages**. Dans *Build and deployment*, choisissez **Deploy from a branch**, branche `main`, dossier `/ (root)`, puis **Save**.
-3. Après une à deux minutes, l'appli est disponible à l'adresse `https://viperfreeze.github.io/myhours/`.
+3. Après une à deux minutes, l'appli est disponible à l'adresse `https://viperfreeze.github.io/MyHours/`. Attention aux majuscules : l'adresse reprend exactement le nom du dépôt, et `/myhours/` en minuscules ne fonctionne pas.
 
 Le dépôt public rend le **code** visible, pas les heures des utilisateurs.
 
