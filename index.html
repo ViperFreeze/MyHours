@@ -197,6 +197,7 @@ a{color:var(--accent)}
 .chartwrap{overflow-x:auto}
 svg text{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
 svg .bar{fill:var(--accent)} svg .bar.cur{opacity:.55}
+svg .hit{fill:transparent;cursor:pointer} svg .hit:hover{fill:var(--sunk)} svg .bar,svg .val{pointer-events:none}
 svg .grid-l{stroke:var(--line);stroke-width:1}
 svg .pace-l{stroke:var(--plan);stroke-width:2;stroke-dasharray:5 4}
 svg .val{fill:var(--ink);font-weight:500}
@@ -444,8 +445,9 @@ svg .val{fill:var(--ink);font-weight:500}
 
 
   <section class="panel" id="p-stats" role="tabpanel" aria-labelledby="t-stats" hidden>
-    <div class="box"><h2>Vue d'ensemble</h2><div class="kpis" id="kpis"></div></div>
-    <div class="box"><h2>Heures par semaine</h2><p class="hint" id="chart-hint">8 dernières semaines</p><div class="chartwrap" id="chart"></div></div>
+    <div class="box"><div class="field"><label for="st-period">Période</label><select id="st-period"><option value="all">Depuis le début</option></select></div>
+      <div class="kpis" id="kpis" style="margin-top:12px"></div></div>
+    <div class="box"><h2 id="chart-title">Heures par mois</h2><p class="hint" id="chart-hint"></p><div class="chartwrap" id="chart"></div></div>
     <div class="box"><h2>Jours de la semaine</h2><div id="weekdays" style="display:flex;flex-direction:column;gap:8px"></div></div>
   </section>
 

@@ -574,50 +574,129 @@ if (typeof document !== "undefined") (function () {
         <button class="sbtn go" data-act="validate">Valider</button><button class="sbtn" data-act="skip" data-confirm="Confirmer">Pas faite</button></div></div>`;
     }).join("");
   }
-  function renderStats(c) {
-    const e = state.entries, now = c.now;
-    const avg = e.length ? sum(e, x => x.hours) / e.length : 0;
-    const kp = [
-      [e.length, e.length > 1 ? "sorties réalisées" : "sortie réalisée"],
-      [e.length ? dur(avg) : "–", "en moyenne par sortie"],
-      [`${num(c.done)} h`, `en ${dfMonth.format(now).split(" ")[0]}`],
-      [c.rate ? dur(c.rate) : "–", "par semaine en moyenne"],
-      [c.left > 0 ? `${num(c.left)} h` : "Atteint", "restantes ce mois-ci"],
-      [c.needed != null ? dur(c.needed) : "–", "par semaine pour finir le mois"]
-    ];
-    $("#kpis").innerHTML = kp.map(([v, l]) => `<div class="kpi"><b class="num">${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
-
-    const ws = weekStart(now), weeks = [];
-    for (let i = 7; i >= 0; i--) { const s = new Date(ws); s.setDate(s.getDate() - 7 * i); weeks.push({ s, h: 0 }); }
-    e.forEach(x => { const k = weekStart(parseYmd(x.date)).getTime(); const w = weeks.find(w => w.s.getTime() === k); if (w) w.h += x.hours; });
-    const pace = c.needed;
-    const maxV = Math.max(1, ...weeks.map(w => w.h), pace || 0);
-    const step = maxV <= 4 ? 1 : maxV <= 10 ? 2 : maxV <= 25 ? 5 : 10;
+  /* ---------- statistiques : depuis le début ou par mois ---------- */
+  let statPeriod = "all";
+  const mkey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  const shortMonth = k => { const [y, m] = k.split("-").map(Number); return dfMon.format(new Date(y, m - 1, 1)).replace(".", ""); };
+  // Tous les mois depuis la première sortie jusqu'au mois en cours (mois vides compris).
+  function statMonths(now) {
+    const keys = state.entries.map(e => e.date.slice(0, 7)).sort();
+    const last = [mkey(now), keys[keys.length - 1] || ""].sort().pop();
+    if (!keys.length) return [mkey(now)];
+    const [y0, m0] = keys[0].split("-").map(Number), out = [];
+    for (let d = new Date(y0, m0 - 1, 1); mkey(d) <= last; d.setMonth(d.getMonth() + 1)) out.push(mkey(d));
+    return out;
+  }
+  function barChart(bars, { line, label }) {
+    const maxV = Math.max(1, ...bars.map(b => b.h), line || 0);
+    const step = maxV <= 4 ? 1 : maxV <= 10 ? 2 : maxV <= 25 ? 5 : maxV <= 60 ? 10 : 20;
     const top = Math.ceil(maxV / step) * step;
-    const W = 360, H = 200, L = 26, R = 4, T = 16, B = 32, cw = (W - L - R) / weeks.length, bw = Math.min(28, cw * .62);
+    const L = 30, R = 4, T = 16, B = 32, H = 200, W = Math.max(360, L + R + bars.length * 38);
+    const cw = (W - L - R) / bars.length, bw = Math.min(28, cw * .62);
     const y = v => T + (H - T - B) * (1 - v / top);
-    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Heures par semaine sur les 8 dernières semaines">`;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W > 360 ? W + "px" : "100%"}" role="img" aria-label="${esc(label)}">`;
     for (let v = 0; v <= top; v += step) svg += `<line class="grid-l" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
-    weeks.forEach((w, i) => {
-      const cx = L + cw * i + cw / 2, cur = i === weeks.length - 1;
-      if (w.h > 0) {
-        svg += `<rect class="bar${cur ? " cur" : ""}" x="${cx - bw / 2}" y="${y(w.h)}" width="${bw}" height="${Math.max(1, y(0) - y(w.h))}" rx="3"/>`;
-        svg += `<text class="val" x="${cx}" y="${y(w.h) - 5}" text-anchor="middle">${num(w.h)}</text>`;
+    bars.forEach((b, i) => {
+      const cx = L + cw * i + cw / 2;
+      if (b.key) svg += `<rect class="hit" data-k="${b.key}" x="${cx - cw / 2}" y="${T}" width="${cw}" height="${H - T}"><title>${esc(b.title || "")}</title></rect>`;
+      if (b.h > 0) {
+        svg += `<rect class="bar${b.cur ? " cur" : ""}" x="${cx - bw / 2}" y="${y(b.h)}" width="${bw}" height="${Math.max(1, y(0) - y(b.h))}" rx="3"/>`;
+        svg += `<text class="val" x="${cx}" y="${y(b.h) - 5}" text-anchor="middle">${num(b.h)}</text>`;
       }
-      svg += `<text x="${cx}" y="${H - B + 16}" text-anchor="middle">${w.s.getDate()}/${pad(w.s.getMonth() + 1)}</text>`;
-      if (cur) svg += `<text x="${cx}" y="${H - B + 29}" text-anchor="middle">en cours</text>`;
+      svg += `<text x="${cx}" y="${H - B + 16}" text-anchor="middle">${esc(b.label)}</text>`;
+      if (b.sub) svg += `<text x="${cx}" y="${H - B + 29}" text-anchor="middle">${esc(b.sub)}</text>`;
     });
-    if (pace) svg += `<line class="pace-l" x1="${L}" x2="${W - R}" y1="${y(pace)}" y2="${y(pace)}"/>`;
-    $("#chart").innerHTML = svg + "</svg>";
-    $("#chart-hint").textContent = "8 dernières semaines, du lundi au dimanche" + (pace ? ` · pointillés : rythme à tenir pour finir le mois (${dur(pace)} par semaine)` : "");
+    if (line) svg += `<line class="pace-l" x1="${L}" x2="${W - R}" y1="${y(line)}" y2="${y(line)}"/>`;
+    return svg + "</svg>";
+  }
+  function renderStats(c) {
+    const now = c.now, goal = state.goal, cur = mkey(now);
+    const months = statMonths(now), byM = {};
+    months.forEach(k => byM[k] = 0);
+    state.entries.forEach(e => { const k = e.date.slice(0, 7); byM[k] = (byM[k] || 0) + e.hours; });
+
+    // Sélecteur de période (le plus récent en premier).
+    const sel = $("#st-period");
+    if (statPeriod !== "all" && !(statPeriod in byM)) statPeriod = "all";
+    sel.innerHTML = `<option value="all">Depuis le début (${num(sum(state.entries, e => e.hours))} h)</option>` +
+      months.slice().reverse().map(k => `<option value="${k}">${esc(monthLabel(k))}${k === cur ? " (en cours)" : ""} · ${num(byM[k])} h</option>`).join("");
+    sel.value = statPeriod;
+
+    const all = statPeriod === "all";
+    const e = all ? state.entries : state.entries.filter(x => x.date.slice(0, 7) === statPeriod);
+    const tot = sum(e, x => x.hours), avg = e.length ? tot / e.length : 0;
+    const sorties = [e.length, e.length > 1 ? "sorties réalisées" : "sortie réalisée"];
+    let kp, chart, hint, title;
+
+    if (all) {
+      const first = state.entries.length ? state.entries.map(x => x.date).sort()[0] : "";
+      // Mois terminés uniquement pour la moyenne et l'objectif, sauf si le mois en cours est déjà atteint.
+      const closed = months.filter(k => k < cur);
+      const counted = closed.concat(byM[cur] >= goal ? [cur] : []);
+      const reached = counted.filter(k => byM[k] >= goal).length;
+      const best = months.reduce((b, k) => byM[k] > (byM[b] || 0) ? k : b, "");
+      const avgM = closed.length ? sum(closed, k => byM[k]) / closed.length : null;
+      kp = [
+        [`${num(tot)} h`, "au total"],
+        sorties,
+        [e.length ? dur(avg) : "–", "en moyenne par sortie"],
+        [avgM != null ? `${num(avgM)} h` : "–", "en moyenne par mois terminé"],
+        [best && byM[best] ? `${num(byM[best])} h` : "–", best && byM[best] ? `meilleur mois (${monthLabel(best).toLowerCase()})` : "meilleur mois"],
+        [counted.length ? `${reached} / ${counted.length}` : "–", `mois avec l'objectif atteint (${num(goal)} h)`],
+        [c.rate ? dur(c.rate) : "–", "par semaine en moyenne"],
+        [first ? first.split("-").reverse().join("/") : "–", "première sortie"]
+      ];
+      title = "Heures par mois";
+      chart = barChart(months.map(k => ({ key: k, h: byM[k], label: shortMonth(k), sub: k.slice(5) === "01" || k === months[0] ? k.slice(0, 4) : "", cur: k === cur, title: `${monthLabel(k)} : ${num(byM[k])} h` })),
+        { line: goal, label: "Heures par mois depuis le début" });
+      hint = `Depuis ${first ? monthLabel(first.slice(0, 7)).toLowerCase() : "le début"} · pointillés : objectif de ${num(goal)} h · touchez un mois pour le détail`;
+    } else {
+      const [y, m] = statPeriod.split("-").map(Number);
+      const mStart = new Date(y, m - 1, 1), mEnd = new Date(y, m, 0);
+      const isCur = statPeriod === cur;
+      const prevK = mkey(new Date(y, m - 2, 1)), prevH = byM[prevK];
+      const left = Math.max(0, goal - tot);
+      const weeksIn = Math.max(1, ((isCur ? now : mEnd) - mStart) / DAY + 1) / 7;
+      kp = [
+        [`${num(tot)} h`, isCur ? "faites ce mois-ci" : "faites ce mois-là"],
+        [tot >= goal ? "Atteint" : `${Math.round(tot / goal * 100)} %`, `de l'objectif (${num(goal)} h)`],
+        sorties,
+        [e.length ? dur(avg) : "–", "en moyenne par sortie"],
+        [tot ? dur(tot / Math.max(1, weeksIn)) : "–", "par semaine en moyenne"],
+        prevH != null ? [`${tot - prevH >= 0 ? "+" : "−"}${num(Math.abs(tot - prevH))} h`, `par rapport à ${monthLabel(prevK).split(" ")[0].toLowerCase()}`] : ["–", "mois précédent"]
+      ];
+      if (isCur) kp.push([left > 0 ? `${num(left)} h` : "Atteint", "restantes ce mois-ci"], [c.needed != null ? dur(c.needed) : "–", "par semaine pour finir le mois"]);
+      else kp.push([tot >= goal ? `+${num(tot - goal)} h` : `${num(left)} h`, tot >= goal ? "au-delà de l'objectif" : "manquantes pour l'objectif"],
+        [new Set(e.map(x => x.date)).size || "–", "jours de sortie"]);
+      // Semaines (lundi → dimanche) qui touchent le mois ; seules les heures du mois comptent.
+      const weeks = [];
+      for (let s = weekStart(mStart); s <= mEnd; s = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 7)) weeks.push({ s, h: 0 });
+      e.forEach(x => { const k = weekStart(parseYmd(x.date)).getTime(); const w = weeks.find(w => w.s.getTime() === k); if (w) w.h += x.hours; });
+      const curW = weekStart(now).getTime();
+      title = "Heures par semaine";
+      chart = barChart(weeks.map(w => ({ h: w.h, label: `${w.s.getDate()}/${pad(w.s.getMonth() + 1)}`, sub: isCur && w.s.getTime() === curW ? "en cours" : "", cur: isCur && w.s.getTime() === curW })),
+        { line: isCur ? c.needed : null, label: `Heures par semaine en ${monthLabel(statPeriod)}` });
+      hint = `${monthLabel(statPeriod)}, semaines du lundi au dimanche` + (isCur && c.needed ? ` · pointillés : rythme à tenir pour finir le mois (${dur(c.needed)} par semaine)` : "");
+    }
+
+    $("#kpis").innerHTML = kp.map(([v, l]) => `<div class="kpi"><b class="num">${esc(String(v))}</b><span>${esc(l)}</span></div>`).join("");
+    $("#chart-title").textContent = title;
+    $("#chart").innerHTML = chart;
+    $("#chart-hint").textContent = hint;
+    const cw = $("#chart"); if (all) cw.scrollLeft = cw.scrollWidth;
 
     const names = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"], wd = [0, 0, 0, 0, 0, 0, 0];
     e.forEach(x => { wd[(parseYmd(x.date).getDay() + 6) % 7] += x.hours; });
     const mw = Math.max(...wd);
     $("#weekdays").innerHTML = e.length
       ? wd.map((v, i) => `<div class="wd"><span>${names[i]}</span><div class="tr"><span style="width:${mw ? v / mw * 100 : 0}%"></span></div><span class="v num">${v ? num(v) + " h" : "–"}</span></div>`).join("")
-      : `<p class="empty">Les statistiques apparaîtront après votre première sortie.</p>`;
+      : `<p class="empty">${state.entries.length ? "Aucune sortie ce mois-là." : "Les statistiques apparaîtront après votre première sortie."}</p>`;
   }
+  $("#st-period").addEventListener("change", ev => { statPeriod = ev.target.value; renderStats(calc()); });
+  $("#chart").addEventListener("click", ev => {
+    const k = ev.target.closest && ev.target.closest("[data-k]"); if (!k) return;
+    statPeriod = k.dataset.k; renderStats(calc()); $("#st-period").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
 
   /* ---------- remise à zéro (toutes les heures ou un mois) ---------- */
   const monthLabel = k => { const [y, m] = k.split("-").map(Number); return cap(dfMonth.format(new Date(y, m - 1, 1))); };
